@@ -2313,9 +2313,11 @@
                 const buys = getFundBuys(fund);
                 let pendingAmount = 0;
                 const hasHistory = Array.isArray(historyCache[fund.code]) && historyCache[fund.code].length > 0;
+                let pendingBuys0 = null;
                 if (hasHistory) {
                     const pb = getPositionFromBuy(fund);
                     if (pb && Array.isArray(pb.pendingBuys) && pb.pendingBuys.length > 0) {
+                        pendingBuys0 = pb.pendingBuys;
                         for (const x of pb.pendingBuys) {
                             const a = Number(x?.amount);
                             if (Number.isFinite(a) && a > 0) pendingAmount += a;
@@ -2323,7 +2325,18 @@
                     }
                 }
                 if (pendingAmount > 0) {
-                    const tag = ' <span class="day-growth-source prebuy">预买入</span>';
+                    const sh0 = getShanghaiTimeParts();
+                    const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+                    const navDateStr0 = getDateStr(fund.navDate);
+                    const shouldShowPrebuyTag0 = Array.isArray(pendingBuys0) && pendingBuys0.length > 0
+                        ? pendingBuys0.some(x => {
+                            const eff = (x && x.effectiveDate) ? String(x.effectiveDate) : '';
+                            if (!eff || !/^\d{4}-\d{2}-\d{2}$/.test(eff)) return true;
+                            if (!navDateStr0 || !/^\d{4}-\d{2}-\d{2}$/.test(navDateStr0)) return true;
+                            return navDateStr0 < eff;
+                        })
+                        : (navDateStr0 !== todayStr0);
+                    const tag = shouldShowPrebuyTag0 ? ' <span class="day-growth-source prebuy">预买入</span>' : '';
                     ppEl.innerHTML = '持仓金额 ¥' + pendingAmount.toFixed(2) + tag;
                     ppEl.style.color = '';
                     const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
