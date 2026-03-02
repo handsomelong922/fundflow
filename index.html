@@ -134,6 +134,7 @@
         .day-growth-source { display: inline-flex; align-items: center; font-size: 0.6875rem; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-left: 6px; line-height: 1; border: 1px solid transparent; user-select: none; }
         .day-growth-source.est { background: rgba(139,92,246,0.1); color: #7c3aed; border-color: rgba(139,92,246,0.22); }
         .day-growth-source.official { background: var(--gray-100); color: var(--gray-500); border-color: var(--gray-200); }
+        .day-growth-source.prebuy { background: rgba(59,130,246,0.12); color: #2563eb; border-color: rgba(59,130,246,0.28); }
         
         /* 添加基金区域折叠 */
         .add-fund-toggle { width: 100%; padding: 14px 24px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border: none; border-bottom: 1px solid rgba(229,229,229,0.6); cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: background 0.2s; }
@@ -599,8 +600,8 @@
                     <div class="chart-main">
                         <div class="chart-container"><div id="klineChart"></div></div>
                     </div>
-                    <div class="chart-side">
-                        <div class="side-card">
+                    <div class="chart-side" id="holdingsSideWrap">
+                        <div class="side-card" id="holdingsSideCard">
                             <div class="table-header">基金持仓（TOP 10）</div>
                             <div id="sectorTags" class="sector-tags"><span style="font-size: 0.8125rem; color: var(--gray-500);">暂无数据</span></div>
                             <div class="side-scroll">
@@ -2270,13 +2271,35 @@
                 document.getElementById('totalProfit').className = 'stat-value';
                 const ppEl = document.getElementById('profitPercent');
                 const buys = getFundBuys(fund);
-                if (buys.length > 0) {
-                    ppEl.textContent = '等待净值更新';
+                let pendingAmount = 0;
+                const hasHistory = Array.isArray(historyCache[fund.code]) && historyCache[fund.code].length > 0;
+                if (hasHistory) {
+                    const pb = getPositionFromBuy(fund);
+                    if (pb && Array.isArray(pb.pendingBuys) && pb.pendingBuys.length > 0) {
+                        for (const x of pb.pendingBuys) {
+                            const a = Number(x?.amount);
+                            if (Number.isFinite(a) && a > 0) pendingAmount += a;
+                        }
+                    }
+                }
+                if (pendingAmount > 0) {
+                    const tag = ' <span class="day-growth-source prebuy">预买入</span>';
+                    ppEl.innerHTML = '持仓金额 ¥' + pendingAmount.toFixed(2) + tag;
+                    ppEl.style.color = '';
+                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
+                    if (!showDailyProfit) {
+                        document.getElementById('totalProfit').textContent = '¥0.00';
+                        document.getElementById('totalProfit').className = 'stat-value positive';
+                    }
+                } else if (buys.length > 0) {
+                    ppEl.textContent = hasHistory ? '等待净值更新' : '加载中...';
+                    ppEl.style.color = '#000';
                 } else {
                     ppEl.textContent = '未设置持仓';
+                    ppEl.style.color = '#000';
                 }
                 ppEl.className = 'stat-change';
-                ppEl.style.color = '#000';
             }
 
             // 用上海时区判断周末
@@ -3244,6 +3267,28 @@
         // ============================================================
         // 持仓加载 - 含 gushitong.baidu.com 新数据源（优先级最高）
         // ============================================================
+        function isLikelyNoStockHoldingsFund(fund) {
+            const name = (fund?.name || '').toString();
+            if (!name) return false;
+            if (/\bETF\b/i.test(name)) return true;
+            if (name.includes('债券') || name.includes('纯债') || name.includes('短债') || name.includes('货币') || name.includes('现金') || name.includes('理财')) return true;
+            return false;
+        }
+
+        function setHoldingsSideVisible(visible) {
+            const wrap = document.getElementById('holdingsSideWrap');
+            if (wrap) wrap.style.display = visible ? '' : 'none';
+            const card = document.getElementById('holdingsSideCard');
+            if (card) card.style.display = visible ? '' : 'none';
+
+            // 布局变化后需要手动触发 ECharts resize，否则画布可能保持旧宽度导致右侧留白
+            try {
+                if (chart && typeof chart.resize === 'function') {
+                    requestAnimationFrame(() => requestAnimationFrame(() => chart.resize()));
+                }
+            } catch {}
+        }
+
         async function loadHoldingsAndSectors(fund, options = {}) {
             const tbody = document.getElementById('holdingsTableBody');
             const tags = document.getElementById('sectorTags');
@@ -3319,6 +3364,7 @@
             }
 
             let baiduData = null; // 解析后的结构化数据: { holdings: [...], sectors: [...] }
+            const noStockHoldingsByType = isLikelyNoStockHoldingsFund(fund);
 
             for (const source of baiduSources) {
                 try {
@@ -3354,6 +3400,11 @@
                     const holdingDate = posContent?.heavyStock?.titleHeader?.[1] || '';
 
                     if (!heavyStockBody || heavyStockBody.length === 0) {
+                        if (noStockHoldingsByType) {
+                            baiduData = { holdings: [], sectors: [], holdingDate: '' };
+                            console.log(`ℹ️ [持仓-${source.name}] ${fund.code} 判定为无股票持仓基金，跳过TOP10持仓渲染`);
+                            break;
+                        }
                         throw new Error('heavyStock.body 为空');
                     }
 
@@ -3422,6 +3473,8 @@
                     if (holdings.length > 0) {
                         baiduData = { holdings, sectors: [], holdingDate: '' };
                         console.log(`✅ eastmoney备用源解析了 ${holdings.length} 条持仓`);
+                    } else if (noStockHoldingsByType) {
+                        baiduData = { holdings: [], sectors: [], holdingDate: '' };
                     }
                 } catch (e) {
                     console.error('解析eastmoney持仓失败:', e);
@@ -3429,12 +3482,24 @@
             }
 
             // --- 无数据退出 ——————————————————————————————————————————
-            if (!baiduData || baiduData.holdings.length === 0) {
+            if (!baiduData) {
                 console.error('💥 所有持仓数据源均失败或无数据');
+                setHoldingsSideVisible(true);
                 tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--gray-500);">数据加载失败，请稍后重试</td></tr>`;
                 tags.innerHTML = `<span style="font-size: 0.8125rem; color: var(--gray-500);">加载失败</span>`;
                 return;
             }
+
+            // ETF/债券/货币等：不展示股票TOP10持仓
+            if (!Array.isArray(baiduData.holdings) || baiduData.holdings.length === 0) {
+                fund._noStockHoldings = true;
+                try { delete holdingsCache[fund.code]; } catch {}
+                setHoldingsSideVisible(false);
+                return;
+            }
+
+            fund._noStockHoldings = false;
+            setHoldingsSideVisible(true);
 
             // --- 渲染板块标签（行业占比）——————————————————————————————
             // 如果有Baidu行业数据直接用；否则后面从eastmoney股票行情里归并
@@ -4196,6 +4261,9 @@
             if (historyCache[code]) {
                 if (renderChart) renderHistoryChart(code);
                 resetHistoryTable(code);
+                if (selectedFund && selectedFund.code === code) {
+                    updateMainDisplay(selectedFund);
+                }
                 return;
             }
 
@@ -4218,8 +4286,9 @@
                         selectedFund.navDate  = jzrq;
                         selectedFund.currentNav = latest.y;
                         saveFunds();
-                        updateMainDisplay(selectedFund);
                     }
+                    // 无论 navDate 是否变更，都需要刷新主面板（否则会卡在“加载中/预买入”直到用户点击）
+                    updateMainDisplay(selectedFund);
                 }
 
                 if (renderChart) renderHistoryChart(code);
