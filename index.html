@@ -1844,7 +1844,7 @@
         function getMiniRealtimeSeries(fund) {
             const series = getRealtimeSeriesForChart(fund);
             let end = getEffectiveRealtimeEndIndex(series);
-            if (end < 0) end = series.length - 1;
+            if (end < 0) return [];
             return series.slice(0, end + 1);
         }
 
@@ -1857,11 +1857,8 @@
         }
 
         function getEffectiveRealtimeEndIndex(series) {
-            const timeEnd = getRealtimeEndIndex();
             const lastKnown = findLastFiniteIndex(series);
-            if (timeEnd < 0) return lastKnown;
-            if (lastKnown < 0) return timeEnd;
-            return Math.min(timeEnd, lastKnown);
+            return lastKnown;
         }
 
         function getRealtimeSeriesForChart(fund) {
@@ -2041,6 +2038,7 @@
                     fund._lastGzDate = gzDateStr;
                     if (gzDateStr === todayStr0) {
                         fund._lastGzIdx = -1;
+                        fund.realtimeHistory = [];
                     }
                 }
                 const gzIdx = getRealtimeMinuteIndexFromGzTime(data.gztime);
@@ -2074,6 +2072,7 @@
                         if (idx >= 0) {
                             if (fund.realtimeHistory.length < 242) fund.realtimeHistory.length = 242;
                             fund.realtimeHistory[idx] = v;
+                            for (let j = idx + 1; j < fund.realtimeHistory.length; j++) fund.realtimeHistory[j] = undefined;
                         }
                     }
                 }
@@ -3799,6 +3798,7 @@
 
         let _turningPointIdxs = [];
         let _turningPointLabels = [];
+        let _turningPointValues = [];
         let _magnetLock = false;
 
         function setTurningPointMagnetData(labels, values, maxPoints, extraIdxs) {
@@ -3806,9 +3806,13 @@
             const merged = [];
             if (Array.isArray(idxs)) merged.push(...idxs);
             if (Array.isArray(extraIdxs)) merged.push(...extraIdxs);
-            const uniq = Array.from(new Set(merged.filter(v => Number.isFinite(v) && v >= 0)));
+            const rawUniq = Array.from(new Set(merged.filter(v => Number.isFinite(v) && v >= 0)));
+            const uniq = Array.isArray(values)
+                ? rawUniq.filter(i => Number.isFinite(values[i]))
+                : rawUniq;
             _turningPointIdxs = uniq.sort((a, b) => a - b);
             _turningPointLabels = Array.isArray(labels) ? labels : [];
+            _turningPointValues = Array.isArray(values) ? values : [];
         }
 
         function findNearestIdx(sortedIdxs, target) {
@@ -3849,10 +3853,26 @@
                 const nearest = findNearestIdx(_turningPointIdxs, curIdx);
                 if (nearest < 0) return;
 
-                const threshold = 1; // 降低磁吸力度，避免影响自由移动
-                if (Math.abs(nearest - curIdx) <= threshold && nearest !== curIdx) {
+                if (!Number.isFinite(_turningPointValues?.[nearest])) return;
+
+                const mouseX = e?.event?.offsetX;
+                const mouseY = e?.event?.offsetY;
+                const vY = Number(_turningPointValues[nearest]);
+                const pt = Number.isFinite(vY) ? chart.convertToPixel({ seriesIndex: 0 }, [nearest, vY]) : null;
+                const px = Array.isArray(pt) ? pt[0] : NaN;
+                const py = Array.isArray(pt) ? pt[1] : NaN;
+                const hasMouse = Number.isFinite(mouseX) && Number.isFinite(mouseY) && Number.isFinite(px) && Number.isFinite(py);
+
+                const shouldSnap = hasMouse
+                    ? (Math.hypot(mouseX - px, mouseY - py) <= 2)
+                    : (Math.abs(nearest - curIdx) <= 1);
+
+                if (shouldSnap && nearest !== curIdx) {
                     _magnetLock = true;
                     try {
+                        if (hasMouse) {
+                            chart.dispatchAction({ type: 'updateAxisPointer', x: px, y: py });
+                        }
                         chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: nearest });
                     } finally {
                         setTimeout(() => { _magnetLock = false; }, 0);
@@ -3863,29 +3883,45 @@
 
         function pickTurningPoints(values, maxPoints = 12) {
             if (!Array.isArray(values) || values.length < 3) return [];
-            const pts = [];
-            let lastFinite = -1;
+            const finiteIdxs = [];
             for (let i = 0; i < values.length; i++) {
-                if (Number.isFinite(values[i])) { lastFinite = i; break; }
+                if (Number.isFinite(values[i])) finiteIdxs.push(i);
             }
-            if (lastFinite < 0) return [];
-            let prev = values[lastFinite];
-            let prevDiff = 0;
-            for (let i = lastFinite + 1; i < values.length; i++) {
-                const v = values[i];
-                if (!Number.isFinite(v)) continue;
-                const diff = v - prev;
-                if (prevDiff !== 0 && diff !== 0 && (prevDiff > 0) !== (diff > 0)) {
-                    // 转折点出现在 prev 对应的索引附近
-                    pts.push({ idx: i - 1, score: Math.abs(prevDiff) + Math.abs(diff) });
+            if (finiteIdxs.length < 3) return [];
+
+            const cand = [];
+            for (let k = 1; k < finiteIdxs.length - 1; k++) {
+                const iPrev = finiteIdxs[k - 1];
+                const i = finiteIdxs[k];
+                const iNext = finiteIdxs[k + 1];
+                const a = values[iPrev];
+                const b = values[i];
+                const c = values[iNext];
+                if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) continue;
+
+                const isPeak = (b >= a && b > c) || (b > a && b >= c);
+                const isValley = (b <= a && b < c) || (b < a && b <= c);
+                if (!isPeak && !isValley) continue;
+
+                const score = Math.abs(b - a) + Math.abs(b - c);
+                if (score <= 0) continue;
+                cand.push({ idx: i, score });
+            }
+
+            if (cand.length === 0) return [];
+            cand.sort((a, b) => b.score - a.score);
+
+            const minGap = Math.max(1, Math.round(values.length / (maxPoints * 2)));
+            const picked = [];
+            for (const p of cand) {
+                if (picked.length >= maxPoints) break;
+                if (picked.every(x => Math.abs(x - p.idx) >= minGap)) {
+                    picked.push(p.idx);
                 }
-                if (diff !== 0) prevDiff = diff;
-                prev = v;
             }
-            if (pts.length <= maxPoints) return pts.map(p => p.idx);
-            pts.sort((a, b) => b.score - a.score);
-            const top = pts.slice(0, maxPoints).map(p => p.idx).sort((a, b) => a - b);
-            return top;
+
+            picked.sort((a, b) => a - b);
+            return picked;
         }
 
         function changeTimeRange(range) {
@@ -3911,7 +3947,7 @@
             for (let m=780; m<=900; m++) labels.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
             const history = getRealtimeSeriesForChart(fund);
             let end = getEffectiveRealtimeEndIndex(history);
-            if (end < 0) end = history.length - 1;
+            if (end < 0) return { labels, history, end: -1, xData: [], yData: [] };
             const xData = labels.slice(0, end + 1);
             const yData = history.slice(0, end + 1);
             return { labels, history, end, xData, yData };
