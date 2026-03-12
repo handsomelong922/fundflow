@@ -228,6 +228,8 @@
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
         .stat-card { background: white; padding: 20px; border-radius: 16px; border: 2px solid var(--gray-200); transition: all 0.3s; position: relative; overflow: hidden; }
         .stat-card:hover { border-color: var(--primary-light); transform: translateY(-4px); box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15); }
+        .stat-card.clickable { cursor: pointer; }
+        .stat-card.clickable:active { transform: translateY(-2px); }
         .stat-label { font-size: 0.75rem; color: var(--gray-600); margin-bottom: 8px; text-transform: uppercase; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
         .stat-value { font-size: 1.875rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; margin-bottom: 6px; }
         .stat-change { font-size: 0.875rem; font-weight: 600; display: flex; align-items: center; gap: 4px; }
@@ -570,7 +572,7 @@
                             <div class="stat-value" id="estimatedNav">--</div>
                             <div class="stat-change" id="estimatedChange">--</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card clickable" id="dayGrowthCard">
                             <div class="stat-label">日涨跌幅</div>
                             <div class="stat-value" id="dayGrowth">--</div>
                             <div class="stat-change" id="dayGrowthChange">--<span class="day-growth-source official" id="dayGrowthSource"></span></div>
@@ -1526,49 +1528,137 @@
         document.getElementById('sourceStatsModal')?.addEventListener('click', (e) => { if (e.target.id === 'sourceStatsModal') closeSourceStats(); });
         function updateSourceIndicator(sourceName) { lastSuccessfulSource = sourceName; const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
 
-        window.addEventListener('DOMContentLoaded', () => { console.log('Higher | 9880699@gmail.com'); initChart(); renderFundList(); fetchMarketIndices(); initMobileSwipeNavigation(); initProfitToggle(); if (funds.length > 0) selectFund(funds[0]); startAutoUpdate(); });
+        window.addEventListener('DOMContentLoaded', () => { 
+            console.log('Higher | 9880699@gmail.com'); 
+            initChart(); 
+            renderFundList(); 
+            fetchMarketIndices(); 
+            initMobileSwipeNavigation(); 
+            initProfitToggle(); 
+            initDayGrowthToggle(); 
+            if (funds.length > 0) selectFund(funds[0]); 
+            startAutoUpdate(); 
+            
+            // 全局resize监听器：处理所有迷你图表的resize
+            let resizeTimer;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    Object.values(miniCharts).forEach(chart => {
+                        if (chart && typeof chart.resize === 'function') {
+                            chart.resize();
+                        }
+                    });
+                }, 100);
+            });
+        });
 
         function renderFundList() {
             const listEl = document.getElementById('fundList');
-            if (funds.length === 0) { listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">还没有添加基金</div><div class="empty-subtext">输入基金代码开始监控</div></div>`; return; }
-            listEl.innerHTML = funds.map(fund => {
-                const isCollapsed = fund._cardCollapsed !== false; // 默认折叠
-                const status = getMarketStatus();
-                const isRealtime = (status.canRealtimeUpdate || status.reason === '午间休市');
-                const displayNav = getDisplayNav(fund);
-                const badgeVal = getDisplayDayGrowth(fund);
-                const badgeOk = Number.isFinite(badgeVal);
-                return `
-                <div class="fund-item ${selectedFund?.code === fund.code ? 'active' : ''} ${isCollapsed ? 'card-collapsed' : 'card-expanded'}" data-code="${fund.code}">
-                    <div class="fund-header" onclick="toggleFundCard('${fund.code}', event)">
-                        <div class="fund-info">
-                            <div class="fund-name">${fund.name || '加载中...'}<span class="fund-collapse-arrow ${isCollapsed ? 'collapsed' : ''}" id="arrow_${fund.code}">▼</span></div>
-                            <div class="fund-code">${fund.code}<span class="fund-code-chg ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'neutral'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</span></div>
+            if (funds.length === 0) { 
+                listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">还没有添加基金</div><div class="empty-subtext">输入基金代码开始监控</div></div>`; 
+                return; 
+            }
+            
+            const status = getMarketStatus();
+            const isRealtime = (status.canRealtimeUpdate || status.reason === '午间休市');
+            
+            // 检查是否需要完全重建（基金数量或顺序变化）
+            const existingItems = Array.from(listEl.querySelectorAll('.fund-item'));
+            const needsRebuild = existingItems.length !== funds.length || 
+                                 existingItems.some((item, idx) => item.dataset.code !== funds[idx].code);
+            
+            if (needsRebuild) {
+                // 完全重建DOM
+                listEl.innerHTML = funds.map(fund => {
+                    const isCollapsed = fund._cardCollapsed !== false;
+                    const displayNav = getDisplayNav(fund);
+                    const badgeVal = getDisplayDayGrowth(fund);
+                    const badgeOk = Number.isFinite(badgeVal);
+                    return `
+                    <div class="fund-item ${selectedFund?.code === fund.code ? 'active' : ''} ${isCollapsed ? 'card-collapsed' : 'card-expanded'}" data-code="${fund.code}">
+                        <div class="fund-header" onclick="toggleFundCard('${fund.code}', event)">
+                            <div class="fund-info">
+                                <div class="fund-name">${fund.name || '加载中...'}<span class="fund-collapse-arrow ${isCollapsed ? 'collapsed' : ''}" id="arrow_${fund.code}">▼</span></div>
+                                <div class="fund-code">${fund.code}<span class="fund-code-chg ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'neutral'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</span></div>
+                            </div>
+                            <div class="fund-actions">
+                                <button class="btn-icon btn-edit" onclick="event.stopPropagation(); openPosModal('${fund.code}')" title="编辑持仓">✏️</button>
+                                <button class="btn-icon btn-refresh" onclick="event.stopPropagation(); refreshFundByCode('${fund.code}')">🔄</button>
+                                <button class="btn-icon btn-delete" onclick="event.stopPropagation(); deleteFund('${fund.code}')">🗑️</button>
+                            </div>
                         </div>
-                        <div class="fund-actions">
-                            <button class="btn-icon btn-edit" onclick="event.stopPropagation(); openPosModal('${fund.code}')" title="编辑持仓">✏️</button>
-                            <button class="btn-icon btn-refresh" onclick="event.stopPropagation(); refreshFundByCode('${fund.code}')">🔄</button>
-                            <button class="btn-icon btn-delete" onclick="event.stopPropagation(); deleteFund('${fund.code}')">🗑️</button>
+                        <div class="fund-body ${isCollapsed ? 'collapsed' : ''}" id="body_${fund.code}">
+                            <div class="fund-metrics">
+                                <div class="metric-card"><div class="metric-label">估算净值</div><div class="metric-value">${displayNav}</div></div>
+                                <div class="metric-card"><div class="metric-label">日涨跌</div><div class="metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</div></div>
+                            </div>
+                            <div class="fund-chart" id="miniChart_${fund.code}"></div>
                         </div>
-                    </div>
-                    <div class="fund-body ${isCollapsed ? 'collapsed' : ''}" id="body_${fund.code}">
-                        <div class="fund-metrics">
-                            <div class="metric-card"><div class="metric-label">估算净值</div><div class="metric-value">${displayNav}</div></div>
-                            <div class="metric-card"><div class="metric-label">日涨跌</div><div class="metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</div></div>
-                        </div>
-                        <div class="fund-chart" id="miniChart_${fund.code}"></div>
-                    </div>
-                </div>`;
-            }).join('');
-            // 绑定卡片主区域点击 → 选中基金
-            listEl.querySelectorAll('.fund-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    if (e.target.closest('.fund-actions') || e.target.closest('.fund-header')) return;
-                    const fund = funds.find(f => f.code === item.dataset.code);
-                    if (fund) selectFund(fund);
+                    </div>`;
+                }).join('');
+                
+                // 绑定卡片主区域点击 → 选中基金
+                listEl.querySelectorAll('.fund-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        if (e.target.closest('.fund-actions') || e.target.closest('.fund-header')) return;
+                        const fund = funds.find(f => f.code === item.dataset.code);
+                        if (fund) selectFund(fund);
+                    });
                 });
-            });
-            funds.forEach(fund => setTimeout(() => initMiniChart(fund), 100));
+                
+                // 初始化图表
+                funds.forEach(fund => {
+                    const chartDom = document.getElementById(`miniChart_${fund.code}`);
+                    if (chartDom && !miniCharts[fund.code]) {
+                        setTimeout(() => initMiniChart(fund), 100);
+                    }
+                });
+            } else {
+                // 只更新数据，不重建DOM
+                existingItems.forEach((item, idx) => {
+                    const fund = funds[idx];
+                    const isCollapsed = fund._cardCollapsed !== false;
+                    const displayNav = getDisplayNav(fund);
+                    const badgeVal = getDisplayDayGrowth(fund);
+                    const badgeOk = Number.isFinite(badgeVal);
+                    
+                    // 更新激活状态
+                    if (selectedFund?.code === fund.code) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                    
+                    // 更新折叠状态
+                    if (isCollapsed) {
+                        item.classList.add('card-collapsed');
+                        item.classList.remove('card-expanded');
+                    } else {
+                        item.classList.add('card-expanded');
+                        item.classList.remove('card-collapsed');
+                    }
+                    
+                    // 更新涨跌幅徽章
+                    const badge = item.querySelector('.fund-code-chg');
+                    if (badge) {
+                        badge.className = `fund-code-chg ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'neutral'}`;
+                        badge.textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
+                    }
+                    
+                    // 更新指标卡片
+                    const metricValues = item.querySelectorAll('.metric-value');
+                    if (metricValues[0]) metricValues[0].textContent = displayNav;
+                    if (metricValues[1]) {
+                        metricValues[1].className = `metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}`;
+                        metricValues[1].textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
+                    }
+                    
+                    // 更新迷你图表
+                    updateMiniChart(fund);
+                });
+            }
+            
             updateAllPositionSummary();
         }
 
@@ -1808,7 +1898,6 @@
                 yAxis: { type: 'value', show: false, scale: true },
                 series: [{ type: 'line', data: yData, smooth: true, symbol: 'none', connectNulls: true, lineStyle: { width: 2, color: isUp ? '#ef4444' : '#10b981' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: isUp ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)' }, { offset: 1, color: 'rgba(255,255,255,0)' }]) } }]
             });
-            window.addEventListener('resize', () => miniChart.resize());
         }
 
         function updateMiniChart(fund) {
@@ -2092,14 +2181,6 @@
             } catch (e) { console.error('获取基金数据失败:', e); showToast('数据获取失败，请稍后重试', 'error'); }
         }
 
-        function getShanghaiTimeParts() {
-            const now = new Date();
-            const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(now);
-            const map = {}; parts.forEach(p => map[p.type] = p.value);
-            const dow = new Date(Date.UTC(map.year, map.month - 1, map.day)).getUTCDay();
-            return { year: parseInt(map.year), month: parseInt(map.month), day: parseInt(map.day), hour: parseInt(map.hour), minute: parseInt(map.minute), dow };
-        }
-
         function formatLastGzTimeForAshare(gztime) {
             if (!gztime || typeof gztime !== 'string') return gztime;
             let m = gztime.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
@@ -2107,13 +2188,6 @@
             const minutes = parseInt(m[4]) * 60 + parseInt(m[5]);
             const date = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
             return minutes > 15 * 60 ? `${date} 15:00` : `${date} ${m[4].padStart(2,'0')}:${m[5].padStart(2,'0')}`;
-        }
-
-        function getDateStr(dateTimeStr) {
-            if(!dateTimeStr) return '';
-            const m = dateTimeStr.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-            if(!m) return '';
-            return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
         }
 
         // 持仓收益显示模式：false=总收益，true=当日盈亏
@@ -2133,6 +2207,91 @@
                 profitCard.style.cursor = 'pointer';
                 profitCard.title = '点击切换总收益/当日盈亏';
             }
+        }
+
+        // 日涨跌幅卡片切换状态
+        let showStreakView = false;
+
+        // 初始化日涨跌幅卡片切换功能
+        function initDayGrowthToggle() {
+            const dayGrowthCard = document.getElementById('dayGrowthCard');
+            if (dayGrowthCard) {
+                dayGrowthCard.addEventListener('click', function() {
+                    showStreakView = !showStreakView;
+                    if (selectedFund) {
+                        updateDayGrowthDisplay(selectedFund);
+                    }
+                });
+                dayGrowthCard.title = '点击切换日涨跌幅/连续涨跌';
+            }
+        }
+
+        // 计算历史最长连续涨跌和当前连续涨跌
+        function calculateStreakData(fund) {
+            const history = historyCache[fund.code];
+            if (!Array.isArray(history) || history.length < 2) {
+                return {
+                    maxUpStreak: 0,
+                    maxDownStreak: 0,
+                    currentStreak: 0,
+                    currentIsUp: null
+                };
+            }
+
+            let maxUpStreak = 0;
+            let maxDownStreak = 0;
+            let currentUpStreak = 0;
+            let currentDownStreak = 0;
+            
+            // 从旧到新遍历历史净值数据（history[0]是最旧的，history[length-1]是最新的）
+            for (let i = 1; i < history.length; i++) {
+                const current = Number(history[i].y);
+                const previous = Number(history[i - 1].y);
+                
+                if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+                    // 数据无效时，重置当前连续计数
+                    currentUpStreak = 0;
+                    currentDownStreak = 0;
+                    continue;
+                }
+                
+                const change = ((current - previous) / previous) * 100;
+                
+                if (change > 0) {
+                    // 上涨
+                    currentUpStreak++;
+                    currentDownStreak = 0;
+                    maxUpStreak = Math.max(maxUpStreak, currentUpStreak);
+                } else if (change < 0) {
+                    // 下跌
+                    currentDownStreak++;
+                    currentUpStreak = 0;
+                    maxDownStreak = Math.max(maxDownStreak, currentDownStreak);
+                } else {
+                    // 涨跌为0时，重置连续计数
+                    currentUpStreak = 0;
+                    currentDownStreak = 0;
+                }
+            }
+
+            // 当前连续状态就是最后的连续计数
+            let currentStreak = 0;
+            let currentIsUp = null;
+            
+            if (currentUpStreak > 0) {
+                currentStreak = currentUpStreak;
+                currentIsUp = true;
+            } else if (currentDownStreak > 0) {
+                currentStreak = currentDownStreak;
+                currentIsUp = false;
+            }
+
+            return {
+                maxUpStreak,
+                maxDownStreak,
+                currentStreak,
+                currentIsUp
+            };
         }
 
         function updateMainDisplay(fund) {
@@ -2759,6 +2918,59 @@
         function updateDayGrowthDisplay(fund) {
             const el = document.getElementById('dayGrowth');
             const chgEl = document.getElementById('dayGrowthChange');
+            const labelEl = document.querySelector('#dayGrowthCard .stat-label');
+            
+            // 如果显示连续涨跌视图
+            if (showStreakView) {
+                const streakData = calculateStreakData(fund);
+                
+                if (labelEl) {
+                    labelEl.textContent = '连续涨跌';
+                }
+                
+                // 显示连续涨跌数据
+                if (streakData.maxUpStreak > 0 || streakData.maxDownStreak > 0) {
+                    // 主数值：显示当前连涨/跌状态
+                    if (streakData.currentStreak > 0 && streakData.currentIsUp !== null) {
+                        const currentIcon = streakData.currentIsUp ? '↗' : '↘';
+                        el.innerHTML = `${currentIcon} ${streakData.currentStreak} 天`;
+                        el.className = `stat-value ${streakData.currentIsUp ? 'positive' : 'negative'}`;
+                        el.style.opacity = '';
+                    } else {
+                        // 没有当前连续状态，显示--
+                        el.innerHTML = '--';
+                        el.className = 'stat-value';
+                        el.style.opacity = '';
+                    }
+                    
+                    if (chgEl) {
+                        // 底部：显示历史最长连涨和连跌记录（完全使用默认颜色）
+                        const upText = streakData.maxUpStreak > 0 
+                            ? `最长连涨 ${streakData.maxUpStreak} 天` 
+                            : '无连涨记录';
+                        const downText = streakData.maxDownStreak > 0 
+                            ? `最长连跌 ${streakData.maxDownStreak} 天` 
+                            : '无连跌记录';
+                        
+                        chgEl.innerHTML = `${upText} | ${downText}`;
+                        chgEl.className = 'stat-change';
+                    }
+                } else {
+                    el.innerHTML = '--';
+                    el.className = 'stat-value';
+                    if (chgEl) {
+                        chgEl.innerHTML = '<span style="color: var(--gray-400);">数据不足</span>';
+                        chgEl.className = 'stat-change';
+                    }
+                }
+                return;
+            }
+            
+            // 默认显示日涨跌幅
+            if (labelEl) {
+                labelEl.textContent = '日涨跌幅';
+            }
+            
             const status = getMarketStatus();
             const cache = holdingsCache[fund.code];
 
@@ -2769,7 +2981,7 @@
             const fundgzEst = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
             const hasFundgzToday = (estDateStr === todayStr) && Number.isFinite(fundgzEst);
 
-            // 百度 gushitong 已给出“当日官方日涨跌幅(newest)”：优先展示（比历史净值更快）
+            // 百度 gushitong 已给出"当日官方日涨跌幅(newest)"：优先展示（比历史净值更快）
             const baiduNewestDate = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
             const baiduNewestChg = Number(fund && fund._baiduNewestDayGrowth);
             if (baiduNewestDate === todayStr && Number.isFinite(baiduNewestChg)) {
@@ -2779,6 +2991,7 @@
                 el.className = `stat-value ${baiduNewestChg >= 0 ? 'positive' : 'negative'}`;
                 if (chgEl) {
                     chgEl.innerHTML = `当日涨幅 ${todayStr.slice(5)} <span class="day-growth-source official">官方</span>`;
+                    chgEl.style.fontSize = '';
                 }
                 return;
             }
@@ -2794,6 +3007,7 @@
                     if (chgEl) {
                         const offDate = navDateStr ? navDateStr.slice(5) : '';
                         chgEl.innerHTML = `当日涨幅${offDate ? ' ' + offDate + ' 15:00' : ''} <span class="day-growth-source official">官方</span>`;
+                        chgEl.style.fontSize = '';
                     }
                     return;
                 }
@@ -2817,6 +3031,7 @@
                     el.className = `stat-value ${est >= 0 ? 'positive' : 'negative'}`;
                     if (chgEl) {
                         chgEl.innerHTML = `TOP10权重 ${cache.top10Weight.toFixed(2)}% <span class="day-growth-source est">估算</span>`;
+                        chgEl.style.fontSize = '';
                     }
                 } else {
                     const est = fundgzEst;
@@ -2827,6 +3042,7 @@
                     if (chgEl) {
                         const t = (fund.estimatedTime && typeof fund.estimatedTime === 'string') ? (fund.estimatedTime.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '') : '';
                         chgEl.innerHTML = `今日估算${t ? ' ' + t : ''} <span class="day-growth-source est">估算</span>`;
+                        chgEl.style.fontSize = '';
                     }
                 }
             } else {
@@ -2842,6 +3058,7 @@
                     chgEl.innerHTML = !isNaN(dg)
                         ? `当日涨幅${offDate ? ' ' + offDate + ' 15:00' : ''} <span class="day-growth-source official">官方</span>`
                         : '--';
+                    chgEl.style.fontSize = '';
                 }
             }
         }
