@@ -2933,7 +2933,7 @@
                     // 主数值：显示当前连涨/跌状态
                     if (streakData.currentStreak > 0 && streakData.currentIsUp !== null) {
                         const currentIcon = streakData.currentIsUp ? '↗' : '↘';
-                        el.innerHTML = `${currentIcon} ${streakData.currentStreak} 天`;
+                        el.innerHTML = `${currentIcon}${streakData.currentStreak}天`;
                         el.className = `stat-value ${streakData.currentIsUp ? 'positive' : 'negative'}`;
                         el.style.opacity = '';
                     } else {
