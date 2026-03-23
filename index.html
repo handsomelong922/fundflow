@@ -1775,7 +1775,6 @@
 
         window.addEventListener('DOMContentLoaded', () => { 
             console.log('Higher | 9880699@gmail.com');
-            console.log('🚀 性能优化已启用: DocumentFragment批量DOM, requestIdleCallback懒加载, 图表节流200ms, 事件委托');
             initChart(); 
             renderFundList(); 
             fetchMarketIndices(); 
@@ -2472,7 +2471,11 @@
                 const acceptGz = (gzIdx < 0) ? true : (gzIdx >= lastIdx);
                 if (acceptGz && gzIdx >= 0) fund._lastGzIdx = gzIdx;
 
-                if (acceptGz) {
+                // 关键修复：今日官方净值已出时，不再用估算数据覆盖
+                const navDateStr = getDateStr(data.jzrq);
+                const shouldAcceptEstimate = !(navDateStr === todayStr0 && acceptGz);
+                
+                if (acceptGz && shouldAcceptEstimate) {
                     fund._fundgzDayGrowth = data.gszzl;
                     // 默认先用 fundgz；若后续有持仓估算，会在 updateDayGrowthDisplay 中覆盖
                     fund.dayGrowth = data.gszzl;
@@ -2488,7 +2491,7 @@
                     : dwjzNum0;
                 if (!Array.isArray(fund.realtimeHistory)) fund.realtimeHistory = [];
                 const allowRealtimeWrite = (status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全');
-                if (allowRealtimeWrite && acceptGz) {
+                if (allowRealtimeWrite && acceptGz && shouldAcceptEstimate) {
                     const v0 = parseFloat(data.gsz);
                     const v = (Number.isFinite(v0) && v0 > 0) ? v0 : seed;
                     if (Number.isFinite(v) && v > 0) {
@@ -2502,7 +2505,7 @@
                         }
                     }
                 }
-                if (acceptGz) {
+                if (acceptGz && shouldAcceptEstimate) {
                     fund.lastUpdateTime = formatLastGzTimeForAshare(data.gztime) || '';
                 }
                 saveFunds();
