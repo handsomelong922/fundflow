@@ -233,6 +233,14 @@
         .overview-refresh-btn .refresh-icon { font-size: 1.05rem; transition: transform 0.6s; }
         .overview-refresh-btn.refreshing .refresh-icon { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        .ptr-host { position: relative; }
+        .pull-refresh-indicator { position: absolute; left: 0; right: 0; top: 0; height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; pointer-events: none; z-index: 50; }
+        .pull-refresh-indicator .pill { display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(229, 231, 235, 0.9); box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); color: var(--gray-700); font-size: 0.875rem; font-weight: 800; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        .pull-refresh-indicator .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(148, 163, 184, 0.45); border-top-color: var(--primary); }
+        .pull-refresh-indicator.refreshing .spinner { animation: spin 0.9s linear infinite; }
+        .pull-refresh-indicator .text { line-height: 1; letter-spacing: 0.02em; }
+        .pull-refresh-indicator.show { height: 54px; }
         .overview-list { display: flex; flex-direction: column; gap: 16px; max-width: none; }
         .overview-card { background: white; border: 2px solid var(--gray-200); border-radius: 16px; padding: 20px 24px; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 120px auto; align-items: center; gap: 24px; }
         .overview-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--primary) 0%, var(--purple) 100%); transform: scaleY(0); transform-origin: top; transition: transform 0.3s; }
@@ -1003,6 +1011,166 @@
             }, { passive: true, capture: true });
 
             root.addEventListener('touchcancel', reset, { passive: true, capture: true });
+        }
+
+        function initMobilePullToRefresh() {
+            const isMobile = () => window.innerWidth <= 768;
+            const ratio = 1.6;
+            const threshold = 70;
+            const cooldownMs = 1500;
+            const decideMinMove = 10;
+            const showMinDy = 12;
+            const fireDxLimit = 18;
+
+            let lastFireAt = 0;
+
+            function ensureIndicator(container) {
+                if (!container) return null;
+                container.classList.add('ptr-host');
+                const existed = container.querySelector(':scope > .pull-refresh-indicator');
+                if (existed) return existed;
+                const el = document.createElement('div');
+                el.className = 'pull-refresh-indicator';
+                el.innerHTML = '<div class="pill"><span class="spinner" aria-hidden="true"></span><span class="text">下拉刷新</span></div>';
+                container.insertBefore(el, container.firstChild);
+                return el;
+            }
+
+            function setIndicator(ind, state, pullDy) {
+                if (!ind) return;
+                if (!state) {
+                    ind.classList.remove('show');
+                    ind.classList.remove('refreshing');
+                    ind.style.transform = '';
+                    const t = ind.querySelector('.text');
+                    if (t) t.textContent = '下拉刷新';
+                    return;
+                }
+
+                ind.classList.add('show');
+                const t = ind.querySelector('.text');
+                if (state === 'pull') {
+                    ind.classList.remove('refreshing');
+                    if (t) t.textContent = '下拉刷新';
+                } else if (state === 'ready') {
+                    ind.classList.remove('refreshing');
+                    if (t) t.textContent = '松手刷新';
+                } else if (state === 'refreshing') {
+                    ind.classList.add('refreshing');
+                    if (t) t.textContent = '刷新中...';
+                }
+                if (Number.isFinite(pullDy) && pullDy > 0 && state !== 'refreshing') {
+                    const dy = Math.min(pullDy, 90);
+                    ind.style.transform = `translateY(${dy * 0.2}px)`;
+                } else {
+                    ind.style.transform = '';
+                }
+            }
+
+            function bindPull(attachEl, scrollEl, indicatorHostEl, getAction) {
+                if (!attachEl) return;
+                const getScrollTop = () => {
+                    const el = scrollEl || attachEl;
+                    return el && typeof el.scrollTop === 'number' ? el.scrollTop : 0;
+                };
+
+                const indicator = ensureIndicator(indicatorHostEl || scrollEl || attachEl);
+
+                let startX = 0;
+                let startY = 0;
+                let tracking = false;
+                let eligible = false;
+                let fired = false;
+                let actionFn = null;
+                let decided = false;
+                let allowVertical = false;
+
+                const reset = () => { tracking = false; eligible = false; fired = false; actionFn = null; decided = false; allowVertical = false; setIndicator(indicator, null); };
+
+                attachEl.addEventListener('touchstart', (e) => {
+                    if (!isMobile()) return;
+                    if (Date.now() - lastFireAt < cooldownMs) return;
+                    if (getScrollTop() > 0) return;
+
+                    const target = e && e.target;
+                    if (target && target.closest && (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('textarea') || target.closest('select'))) {
+                        return;
+                    }
+
+                    actionFn = (getAction && getAction()) || null;
+                    if (typeof actionFn !== 'function') { actionFn = null; return; }
+
+                    const t0 = e.touches && e.touches[0];
+                    if (!t0) return;
+                    startX = t0.clientX;
+                    startY = t0.clientY;
+                    tracking = true;
+                    eligible = true;
+                    fired = false;
+                    decided = false;
+                    allowVertical = false;
+                }, { passive: true });
+
+                attachEl.addEventListener('touchmove', (e) => {
+                    if (!tracking || !eligible || fired) return;
+                    if (getScrollTop() > 0) { reset(); return; }
+                    const t = e.touches && e.touches[0];
+                    if (!t) return;
+                    const dx = t.clientX - startX;
+                    const dy = t.clientY - startY;
+
+                    // 方向判定：一旦确认是横向为主，立即取消（避免左右滑误触）
+                    if (!decided) {
+                        if (Math.abs(dx) + Math.abs(dy) < decideMinMove) return;
+                        decided = true;
+                        if (Math.abs(dx) > Math.abs(dy) * ratio) { reset(); return; }
+                        allowVertical = true;
+                    }
+                    if (!allowVertical) return;
+                    if (Math.abs(dx) > Math.abs(dy) * ratio) { reset(); return; }
+
+                    if (dy <= 0) return;
+                    if (Math.abs(dy) <= Math.abs(dx) * ratio) return;
+                    if (dy >= showMinDy) setIndicator(indicator, dy >= threshold ? 'ready' : 'pull', dy);
+                    if (dy < threshold) return;
+                    if (Math.abs(dx) > fireDxLimit) { reset(); return; }
+
+                    fired = true;
+                    lastFireAt = Date.now();
+                    tracking = false;
+                    eligible = false;
+                    if (typeof actionFn === 'function') {
+                        setIndicator(indicator, 'refreshing');
+                        const ret = actionFn();
+                        Promise.resolve(ret).finally(() => {
+                            setTimeout(() => reset(), 600);
+                        });
+                    } else {
+                        reset();
+                    }
+                }, { passive: true });
+
+                attachEl.addEventListener('touchend', () => { if (!fired) reset(); }, { passive: true });
+                attachEl.addEventListener('touchcancel', () => { if (!fired) reset(); }, { passive: true });
+            }
+
+            const overviewEl = document.getElementById('fundOverviewView');
+            bindPull(overviewEl, overviewEl, overviewEl, () => {
+                const mainContent = document.querySelector('.main-content');
+                const inOverview = !!(mainContent && mainContent.classList.contains('overview-mode'));
+                return inOverview ? (() => refreshAllFunds()) : null;
+            });
+
+            const detailScrollEl = document.querySelector('.fund-detail-view .chart-section');
+            const detailViewEl = document.querySelector('.fund-detail-view');
+            bindPull(detailViewEl, detailScrollEl, detailViewEl, () => {
+                const mainContent = document.querySelector('.main-content');
+                const inOverview = !!(mainContent && mainContent.classList.contains('overview-mode'));
+                if (inOverview) return null;
+                const code = selectedFund && selectedFund.code;
+                if (!code) return null;
+                return () => refreshFundByCode(code);
+            });
         }
 
         // ============================================================
@@ -2146,6 +2314,7 @@
             initMobileSwipeNavigation(); 
             initMobileCollapseExpandSwipe();
             initMobileAddFundSwipeCollapse();
+            initMobilePullToRefresh();
             initProfitToggle(); 
             initDayGrowthToggle(); 
             
@@ -2346,7 +2515,7 @@
         function refreshFundByCode(code) {
             const fund = funds.find(f => f.code === code);
             if (!fund) return;
-            fetchFundData(fund);
+            return fetchFundData(fund);
         }
 
         function initMobileSwipeNavigation() {
