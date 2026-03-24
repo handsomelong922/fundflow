@@ -104,7 +104,7 @@
         .fund-suggest-name { font-size: 0.875rem; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .fund-suggest-meta { font-size: 0.75rem; color: var(--gray-500); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .fund-suggest-code { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 800; color: var(--gray-700); background: var(--gray-100); padding: 4px 8px; border-radius: 8px; flex-shrink: 0; }
-        .fund-list { flex: 1; overflow-y: auto; padding: 16px; }
+        .fund-list { flex: 1; overflow-y: auto; padding: 12px; }
         .fund-list::-webkit-scrollbar { width: 6px; }
         .fund-list::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 10px; }
         .fund-item { background: white; border: 2px solid transparent; border-radius: 16px; padding: 18px; margin-bottom: 14px; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
@@ -408,7 +408,7 @@
             .keyboard-hint { display: none !important; }
             .main-content { margin-left: 0; touch-action: pan-x pan-y; }
             .main-header { padding: 80px 16px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
-            .fund-overview-view { padding: 16px; }
+            .fund-overview-view { padding: 80px 16px 16px; }
             .overview-header { margin-bottom: 16px; }
             .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 12px; }
             .overview-list { gap: 12px; }
@@ -430,6 +430,7 @@
             .chart-container { padding: 16px; }
             .side-card { padding: 16px; }
             .fund-meta { gap: 8px; }
+            .update-time, .remind-chip { padding: 6px 14px; line-height: 1; display: inline-flex; align-items: center; }
             .chart-header { flex-direction: column; align-items: flex-start; gap: 12px; }
             .time-tabs { width: 100%; justify-content: space-between; }
             .time-tab { padding: 8px 12px; font-size: 0.8125rem; }
@@ -445,6 +446,14 @@
             .index-card.selected { grid-column: span 1; }
             .index-value { font-size: 1rem; }
 
+            .add-fund-toggle { padding: 14px 16px; }
+            .add-fund-toggle-left { gap: 12px; }
+            .add-fund-toggle-title { font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; }
+            .add-fund-inner { padding: 14px 16px 18px; }
+            .input-field { padding: 14px 14px; font-size: 1rem; }
+            .btn-add { padding: 12px 16px; font-size: 1rem; }
+            .fund-suggest-item { padding: 12px 12px; }
+
             .toast-container { top: auto; right: auto; left: 50%; bottom: 16px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 420px; gap: 10px; }
             .toast { padding: 12px 14px; border-radius: 12px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14); animation: toastUp 0.22s ease-out; }
             .toast .toast-row { gap: 10px; }
@@ -454,7 +463,7 @@
         
         @media (max-width: 480px) {
             .optional-inputs { grid-template-columns: 1fr; }
-            .fund-code-large, .market-status, .update-time { font-size: 0.75rem; padding: 4px 10px; }
+            .fund-code-large, .market-status, .update-time, .remind-chip { font-size: 0.75rem; padding: 4px 10px; line-height: 1; display: inline-flex; align-items: center; }
             .overview-refresh-btn { width: 36px; height: 36px; padding: 0; border-radius: 12px; gap: 0; }
             .overview-refresh-btn .refresh-text { display: none; }
             .overview-card-metric, .overview-card-time { flex: 1 1 calc(50% - 5px); }
@@ -786,6 +795,66 @@
             const arrow = document.getElementById('addFundArrow');
             body.classList.toggle('open');
             arrow.classList.toggle('open');
+        }
+
+        function closeAddFundPanel() {
+            const body = document.getElementById('addFundBody');
+            const arrow = document.getElementById('addFundArrow');
+            if (!body) return;
+            body.classList.remove('open');
+            if (arrow) arrow.classList.remove('open');
+        }
+
+        function initMobileAddFundSwipeCollapse() {
+            const root = document;
+
+            let startX = 0;
+            let startY = 0;
+            let tracking = false;
+            let triggered = false;
+            let startedInSection = false;
+
+            const isMobile = () => window.innerWidth <= 768;
+
+            root.addEventListener('touchstart', (e) => {
+                if (!isMobile()) return;
+                const body = document.getElementById('addFundBody');
+                if (!body || !body.classList.contains('open')) return;
+                const t0 = e.touches && e.touches[0];
+                if (!t0) return;
+
+                const target = e.target;
+                startedInSection = !!(target && target.closest && target.closest('.add-fund-section'));
+                if (!startedInSection) return;
+
+                startX = t0.clientX;
+                startY = t0.clientY;
+                tracking = true;
+                triggered = false;
+            }, { passive: true, capture: true });
+
+            root.addEventListener('touchmove', (e) => {
+                if (!tracking || triggered || !startedInSection) return;
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+                const ratio = 1.2;
+                const threshold = 70;
+
+                if (dx > -threshold) return;
+                if (Math.abs(dx) <= Math.abs(dy) * ratio) return;
+
+                triggered = true;
+                tracking = false;
+                closeAddFundPanel();
+                try { document.activeElement?.blur?.(); } catch {}
+            }, { passive: true, capture: true });
+
+            const stop = () => { tracking = false; startedInSection = false; };
+            root.addEventListener('touchend', stop, { passive: true, capture: true });
+            root.addEventListener('touchcancel', stop, { passive: true, capture: true });
         }
 
         // ============================================================
@@ -1522,6 +1591,57 @@
         const mobileMenuBtn = document.getElementById('mobileMenuBtn');
         const sidebar = document.getElementById('sidebar');
         const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        function closeMobileSidebar() {
+            if (mobileMenuBtn) mobileMenuBtn.classList.remove('active');
+            if (sidebar) sidebar.classList.remove('open');
+            if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+        }
+
+        function initMobileSidebarSwipeClose() {
+            if (!sidebar) return;
+
+            let startX = 0;
+            let startY = 0;
+            let tracking = false;
+            let triggered = false;
+
+            const isMobile = () => window.innerWidth <= 768;
+
+            sidebar.addEventListener('touchstart', (e) => {
+                if (!isMobile()) return;
+                if (!sidebar.classList.contains('open')) return;
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+                startX = t.clientX;
+                startY = t.clientY;
+                tracking = true;
+                triggered = false;
+            }, { passive: true });
+
+            sidebar.addEventListener('touchmove', (e) => {
+                if (!tracking || triggered) return;
+                if (!sidebar.classList.contains('open')) { tracking = false; return; }
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+                const ratio = 1.2;
+                const threshold = 85;
+
+                if (dx > -threshold) return;
+                if (Math.abs(dx) <= Math.abs(dy) * ratio) return;
+
+                triggered = true;
+                tracking = false;
+                closeMobileSidebar();
+            }, { passive: true });
+
+            const stop = () => { tracking = false; };
+            sidebar.addEventListener('touchend', stop, { passive: true });
+            sidebar.addEventListener('touchcancel', stop, { passive: true });
+        }
         
         mobileMenuBtn?.addEventListener('click', () => { mobileMenuBtn.classList.toggle('active'); sidebar.classList.toggle('open'); sidebarOverlay.classList.toggle('active'); });
         
@@ -1530,12 +1650,10 @@
         mobileOverviewBtn?.addEventListener('click', () => {
             showOverviewMode();
             // 同时关闭侧边栏
-            if (mobileMenuBtn) mobileMenuBtn.classList.remove('active');
-            if (sidebar) sidebar.classList.remove('open');
-            if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+            closeMobileSidebar();
         });
         
-        sidebarOverlay?.addEventListener('click', () => { mobileMenuBtn.classList.remove('active'); sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); });
+        sidebarOverlay?.addEventListener('click', () => { closeMobileSidebar(); });
 
         // 侧边栏拖拽调整宽度
         const sidebarResizer = document.getElementById('sidebarResizer');
@@ -1868,7 +1986,9 @@
             initChart(); 
             renderFundList(); 
             fetchMarketIndices(); 
+            initMobileSidebarSwipeClose();
             initMobileSwipeNavigation(); 
+            initMobileAddFundSwipeCollapse();
             initProfitToggle(); 
             initDayGrowthToggle(); 
             
@@ -3962,7 +4082,7 @@
             funds.push(fund); saveFunds(); renderFundList();
             document.getElementById('fundCode').value = ''; document.getElementById('buyAmount').value = ''; document.getElementById('buyDate').value = '';
             await fetchFundData(fund); showToast('添加成功');
-            if (window.innerWidth <= 768) { mobileMenuBtn.classList.remove('active'); sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
+            if (window.innerWidth <= 768) { closeMobileSidebar(); }
         }
         
         function deleteFund(code) {
@@ -3980,7 +4100,7 @@
             loadHoldingsAndSectors(fund);
             fetchHistoryData(fund.code, currentTimeRange !== 'realtime');
             if (currentTimeRange === 'realtime') { updateRealtimeChart(); startRealtimeUpdate(); }
-            if (window.innerWidth <= 768) { mobileMenuBtn.classList.remove('active'); sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
+            if (window.innerWidth <= 768) { closeMobileSidebar(); }
             
             // 切换到详情视图
             const mainContent = document.querySelector('.main-content');
