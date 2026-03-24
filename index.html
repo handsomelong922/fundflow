@@ -3748,6 +3748,98 @@
             return { ok: true, invested, value, profit, profitPct };
         }
 
+        function calcDailyProfitForFund(fund) {
+            const pos = getPosition(fund);
+            if (!pos || !pos.has) return { ok: false };
+
+            const status = getMarketStatus();
+            const shProfit = getShanghaiTimeParts();
+            const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
+            const navDateProfitStr = getDateStr(fund.navDate);
+            const officialNav0 = parseFloat(fund.currentNav);
+            const profitNav0 = parseFloat(getDisplayNav(fund));
+            const profitNav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0))
+                ? officialNav0
+                : (Number.isFinite(profitNav0)
+                    ? profitNav0
+                    : ((status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全')
+                        ? parseFloat(fund.estimatedNav || fund.currentNav)
+                        : parseFloat(fund.currentNav)));
+
+            if (!Number.isFinite(profitNav) || profitNav <= 0) return { ok: false };
+            const m = calcPositionMetrics(pos, profitNav);
+            if (!m.ok) return { ok: false };
+
+            const dayGrowth = parseFloat(fund.dayGrowth);
+            const todayValue = Number(m.value) || 0;
+
+            let prevValue = todayValue;
+            let dailyProfit = 0;
+            let hasDiff = false;
+
+            const raw = historyCache[fund.code];
+            const hasHistory = Array.isArray(raw) && raw.length >= 1;
+            const last = hasHistory ? raw[raw.length - 1] : null;
+            const prev = (Array.isArray(raw) && raw.length >= 2) ? raw[raw.length - 2] : null;
+
+            const lastNav = last ? Number(last.y) : NaN;
+            const lastDate = last ? tsToDateStr(last.x) : '';
+            const prevNav = prev ? Number(prev.y) : NaN;
+            const prevDate = prev ? tsToDateStr(prev.x) : '';
+
+            const shNow = getShanghaiTimeParts();
+            const todayStr = `${shNow.year}-${String(shNow.month).padStart(2,'0')}-${String(shNow.day).padStart(2,'0')}`;
+            const navDateStr = getDateStr(fund.navDate);
+
+            let todayNavToUse = NaN;
+            let baseNav = NaN;
+            let baseDate = '';
+
+            if (navDateStr === todayStr && Number.isFinite(officialNav0) && officialNav0 > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
+                todayNavToUse = officialNav0;
+                baseNav = prevNav;
+                baseDate = prevDate;
+                hasDiff = true;
+            } else {
+                const estDateStr = getDateStr(fund.estimatedTime);
+                const estNav = Number(fund.estimatedNav);
+                if (estDateStr === todayStr && Number.isFinite(estNav) && estNav > 0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
+                    todayNavToUse = estNav;
+                    baseNav = lastNav;
+                    baseDate = lastDate;
+                    hasDiff = true;
+                }
+            }
+
+            if (Number.isFinite(todayNavToUse) && todayNavToUse > 0 && Number.isFinite(baseNav) && baseNav > 0 && baseDate) {
+                const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, baseDate);
+                if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                    prevValue = baseNav * sharesPrev0;
+                    dailyProfit = (todayNavToUse - baseNav) * sharesPrev0;
+                } else {
+                    hasDiff = false;
+                }
+            }
+
+            if (!hasDiff) {
+                const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
+                if (src0 === 'est') {
+                    const mBase = calcPositionMetricsOfficialT2FromBuys(fund);
+                    const baseValue = (mBase && mBase.ok) ? Number(mBase.value) : todayValue;
+                    prevValue = Number.isFinite(baseValue) ? baseValue : todayValue;
+                    dailyProfit = (Number.isFinite(dayGrowth) && Number.isFinite(prevValue)) ? (prevValue * dayGrowth / 100) : 0;
+                } else {
+                    if (Number.isFinite(dayGrowth) && Number.isFinite(todayValue) && Math.abs(dayGrowth) < 50) {
+                        const k = 1 + dayGrowth / 100;
+                        if (k !== 0) prevValue = todayValue / k;
+                    }
+                    dailyProfit = todayValue - prevValue;
+                }
+            }
+
+            return { ok: true, dailyProfit };
+        }
+
         function updateAllPositionSummary() {
             const amountEl = document.getElementById('allPositionAmount');
             const profitEl = document.getElementById('allPositionProfit');
@@ -3875,26 +3967,23 @@
                 const pos = getPosition(fund);
                 let positionInfo = '';
                 if (pos.has) {
-                    const navForCalc = parseFloat(fund.currentNav);
-                    if (Number.isFinite(navForCalc) && navForCalc > 0) {
-                        const m = calcPositionMetrics(pos, navForCalc);
-                        if (m.ok) {
-                            const profit = m.profit;
-                            const profitClass = profit >= 0 ? 'positive' : 'negative';
-                            positionInfo = `
-                                <div class="overview-card-metric">
-                                    <div class="overview-card-metric-label">持仓收益</div>
-                                    <div class="overview-card-metric-value ${profitClass}">¥${profit.toFixed(2)}</div>
-                                </div>
-                            `;
-                        }
+                    const dp = calcDailyProfitForFund(fund);
+                    if (dp.ok) {
+                        const v = Number(dp.dailyProfit) || 0;
+                        const cls = v >= 0 ? 'positive' : 'negative';
+                        positionInfo = `
+                            <div class="overview-card-metric">
+                                <div class="overview-card-metric-label">当日盈亏</div>
+                                <div class="overview-card-metric-value ${cls}">¥${v.toFixed(2)}</div>
+                            </div>
+                        `;
                     }
                 }
                 
                 if (!positionInfo) {
                     positionInfo = `
                         <div class="overview-card-metric">
-                            <div class="overview-card-metric-label">持仓收益</div>
+                            <div class="overview-card-metric-label">当日盈亏</div>
                             <div class="overview-card-metric-value">--</div>
                         </div>
                     `;
