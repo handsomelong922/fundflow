@@ -329,6 +329,7 @@
         .side-scroll tbody tr:hover { background: var(--gray-50); }
         .side-scroll tbody tr:hover td:first-child { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
         .history-scroll { max-height: 360px; overflow-y: auto; }
+        .history-scroll thead th { position: sticky; top: 0; background: white; z-index: 10; }
         .data-table-container { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06); border: 2px solid var(--gray-100); }
         .toast-container { position: fixed; top: 24px; right: 24px; display: flex; flex-direction: column; gap: 12px; z-index: 10000; pointer-events: none; }
         .toast { padding: 16px 24px; border-radius: 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15); animation: slideIn 0.3s ease-out; background: white; border: 2px solid var(--gray-200); pointer-events: auto; }
@@ -440,6 +441,7 @@
             .market-indices { padding: 0; }
             .indices-toggle { padding: 12px 16px; }
             .indices-inner { padding: 16px; }
+            .indices-content.open { max-height: calc(100vh - 220px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
             /* 移动端恢复1列 */
             .indices-grid { grid-template-columns: 1fr; gap: 8px; }
             .index-card { padding: 10px 12px; min-height: auto; }
@@ -450,6 +452,7 @@
             .add-fund-toggle-left { gap: 12px; }
             .add-fund-toggle-title { font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; }
             .add-fund-inner { padding: 14px 16px 18px; }
+            .add-fund-body.open { max-height: calc(100vh - 220px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
             .input-field { padding: 14px 14px; font-size: 1rem; }
             .btn-add { padding: 12px 16px; font-size: 1rem; }
             .fund-suggest-item { padding: 12px 12px; }
@@ -797,6 +800,14 @@
             arrow.classList.toggle('open');
         }
 
+        function setAddFundOpen(open) {
+            const body = document.getElementById('addFundBody');
+            if (!body) return;
+            const isOpen = body.classList.contains('open');
+            if (open === isOpen) return;
+            toggleAddFund();
+        }
+
         function closeAddFundPanel() {
             const body = document.getElementById('addFundBody');
             const arrow = document.getElementById('addFundArrow');
@@ -855,6 +866,146 @@
             const stop = () => { tracking = false; startedInSection = false; };
             root.addEventListener('touchend', stop, { passive: true, capture: true });
             root.addEventListener('touchcancel', stop, { passive: true, capture: true });
+        }
+
+        function setFundCardCollapsed(code, shouldCollapse) {
+            const fund = funds.find(f => f.code === code);
+            if (!fund) return;
+            const body = document.getElementById('body_' + code);
+            const arrow = document.getElementById('arrow_' + code);
+            if (!body) return;
+
+            const wasCollapsed = body.classList.contains('collapsed');
+            if (shouldCollapse === wasCollapsed) return;
+
+            body.classList.toggle('collapsed', shouldCollapse);
+            if (arrow) arrow.classList.toggle('collapsed', shouldCollapse);
+            fund._cardCollapsed = shouldCollapse;
+            const root = body.closest('.fund-item');
+            if (root) {
+                root.classList.toggle('card-collapsed', shouldCollapse);
+                root.classList.toggle('card-expanded', !shouldCollapse);
+            }
+
+            if (!shouldCollapse && wasCollapsed) {
+                setTimeout(() => {
+                    if (miniCharts[code]) { miniCharts[code].dispose(); delete miniCharts[code]; }
+                    initMiniChart(fund);
+                }, 50);
+            }
+        }
+
+        function initMobileCollapseExpandSwipe() {
+            const root = document;
+            let startX = 0;
+            let startY = 0;
+            let tracking = false;
+            let targetKind = '';
+            let targetCode = '';
+            let scrollEl = null;
+
+            const isMobile = () => window.innerWidth <= 768;
+            const ratio = 1.2;
+            const threshold = 70;
+
+            function reset() {
+                tracking = false;
+                targetKind = '';
+                targetCode = '';
+                scrollEl = null;
+            }
+
+            root.addEventListener('touchstart', (e) => {
+                if (!isMobile()) return;
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+
+                const el = e.target;
+                const fundHeader = el?.closest?.('.fund-header');
+                const fundBody = el?.closest?.('.fund-body');
+                const indicesArea = el?.closest?.('.market-indices');
+                const indicesContent = el?.closest?.('#indicesContent');
+                const addFundArea = el?.closest?.('.add-fund-section');
+                const addFundBody = el?.closest?.('#addFundBody');
+
+                if (el && (el.closest('button') || el.closest('a'))) {
+                    return;
+                }
+
+                if (fundHeader) {
+                    const item = fundHeader.closest('.fund-item');
+                    const code = item?.getAttribute?.('data-code') || '';
+                    if (!code) return;
+                    targetKind = 'fund';
+                    targetCode = code;
+                } else if (fundBody) {
+                    if (fundBody.classList.contains('collapsed')) return;
+                    const item = fundBody.closest('.fund-item');
+                    const code = item?.getAttribute?.('data-code') || '';
+                    if (!code) return;
+                    targetKind = 'fund';
+                    targetCode = code;
+                } else if (indicesArea || indicesContent) {
+                    targetKind = 'indices';
+                    scrollEl = indicesContent || null;
+                } else if (addFundArea || addFundBody) {
+                    if (el && (el.closest('input') || el.closest('textarea') || el.closest('select') || el.closest('.fund-suggest') || el.closest('.fund-suggest-item'))) return;
+                    targetKind = 'addfund';
+                    scrollEl = addFundBody || null;
+                } else {
+                    return;
+                }
+
+                startX = t.clientX;
+                startY = t.clientY;
+                tracking = true;
+            }, { passive: true, capture: true });
+
+            root.addEventListener('touchend', (e) => {
+                if (!tracking) return;
+                const t = e.changedTouches && e.changedTouches[0];
+                if (!t) { reset(); return; }
+
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+                if (Math.abs(dy) < threshold) { reset(); return; }
+                if (Math.abs(dy) <= Math.abs(dx) * ratio) { reset(); return; }
+
+                const shouldCollapse = dy < 0;
+                const shouldExpand = dy > 0;
+
+                if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight + 1) {
+                    const atTop = scrollEl.scrollTop <= 0;
+                    const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1;
+                    if (shouldCollapse && !atBottom) { reset(); return; }
+                    if (shouldExpand && !atTop) { reset(); return; }
+                }
+
+                if (targetKind === 'fund') {
+                    const body = document.getElementById('body_' + targetCode);
+                    const isCollapsed = body?.classList?.contains('collapsed');
+                    if (shouldCollapse && isCollapsed === false) setFundCardCollapsed(targetCode, true);
+                    if (shouldExpand && isCollapsed === true) setFundCardCollapsed(targetCode, false);
+                }
+
+                if (targetKind === 'indices') {
+                    const content = document.getElementById('indicesContent');
+                    const isOpen = content?.classList?.contains('open');
+                    if (shouldCollapse && isOpen) setIndicesOpen(false);
+                    if (shouldExpand && !isOpen) setIndicesOpen(true);
+                }
+
+                if (targetKind === 'addfund') {
+                    const body = document.getElementById('addFundBody');
+                    const isOpen = body?.classList?.contains('open');
+                    if (shouldCollapse && isOpen) setAddFundOpen(false);
+                    if (shouldExpand && !isOpen) setAddFundOpen(true);
+                }
+
+                reset();
+            }, { passive: true, capture: true });
+
+            root.addEventListener('touchcancel', reset, { passive: true, capture: true });
         }
 
         // ============================================================
@@ -1162,6 +1313,14 @@
             if (content.classList.contains('open') && Object.keys(marketIndices).length === 0) {
                 fetchMarketIndices();
             }
+        }
+
+        function setIndicesOpen(open) {
+            const content = document.getElementById('indicesContent');
+            if (!content) return;
+            const isOpen = content.classList.contains('open');
+            if (open === isOpen) return;
+            toggleIndices();
         }
 
         // 市场指数配置
@@ -1988,6 +2147,7 @@
             fetchMarketIndices(); 
             initMobileSidebarSwipeClose();
             initMobileSwipeNavigation(); 
+            initMobileCollapseExpandSwipe();
             initMobileAddFundSwipeCollapse();
             initProfitToggle(); 
             initDayGrowthToggle(); 
@@ -2378,24 +2538,9 @@
             const fund = funds.find(f => f.code === code);
             if (!fund) return;
             const body = document.getElementById('body_' + code);
-            const arrow = document.getElementById('arrow_' + code);
             if (!body) return;
             const wasCollapsed = body.classList.contains('collapsed');
-            body.classList.toggle('collapsed');
-            if (arrow) arrow.classList.toggle('collapsed');
-            fund._cardCollapsed = !wasCollapsed;
-            const root = event.currentTarget?.closest('.fund-item');
-            if (root) {
-                root.classList.toggle('card-collapsed', fund._cardCollapsed !== false);
-                root.classList.toggle('card-expanded', fund._cardCollapsed === false);
-            }
-            // 展开时重新初始化迷你图
-            if (wasCollapsed) {
-                setTimeout(() => {
-                    if (miniCharts[code]) { miniCharts[code].dispose(); delete miniCharts[code]; }
-                    initMiniChart(fund);
-                }, 50);
-            }
+            setFundCardCollapsed(code, !wasCollapsed);
             // 同时选中该基金
             selectFund(fund);
         }
