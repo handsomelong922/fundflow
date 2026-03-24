@@ -223,9 +223,15 @@
         .main-content.overview-mode .fund-overview-view { display: block; }
         .main-content:not(.overview-mode) .fund-overview-view { display: none; }
         .fund-overview-view { padding: 32px; overflow-y: auto; flex: 1; }
-        .overview-header { margin-bottom: 32px; }
+        .overview-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; }
         .overview-title { font-size: 1.75rem; font-weight: 800; color: var(--gray-900); margin-bottom: 12px; }
         .overview-subtitle { font-size: 1rem; color: var(--gray-600); }
+        .overview-refresh-btn { padding: 12px 18px; border: 1.5px solid var(--primary); background: white; border-radius: 12px; font-size: 0.875rem; font-weight: 800; color: var(--primary); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
+        .overview-refresh-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.22); }
+        .overview-refresh-btn:active { transform: translateY(0); }
+        .overview-refresh-btn .refresh-icon { font-size: 1.05rem; transition: transform 0.6s; }
+        .overview-refresh-btn.refreshing .refresh-icon { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .overview-list { display: flex; flex-direction: column; gap: 16px; max-width: none; }
         .overview-card { background: white; border: 2px solid var(--gray-200); border-radius: 16px; padding: 20px 24px; cursor: pointer; transition: all 0.3s; position: relative; overflow: hidden; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 120px auto; align-items: center; gap: 24px; }
         .overview-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--primary) 0%, var(--purple) 100%); transform: scaleY(0); transform-origin: top; transition: transform 0.3s; }
@@ -398,10 +404,19 @@
             .main-content { margin-left: 0; touch-action: pan-y; }
             .main-header { padding: 80px 16px 16px; }
             .fund-overview-view { padding: 16px; }
+            .overview-header { margin-bottom: 16px; }
+            .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 999px; }
             .overview-list { gap: 12px; }
-            .overview-card { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
+            .overview-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 10px; padding: 12px; }
+            .overview-card-info { order: 1; flex: 1 1 auto; min-width: 0; }
+            .overview-card-actions { order: 2; flex: 0 0 auto; }
+            .overview-card-metric { order: 3; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
+            .overview-card-time { order: 4; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
+            .overview-card-name { font-size: 1rem; margin-bottom: 4px; }
+            .overview-card-metric-label, .overview-card-time-label { font-size: 0.625rem; margin-bottom: 3px; }
+            .overview-card-metric-value { font-size: 1rem; }
             .overview-card-metric, .overview-card-time { align-items: flex-start; min-width: auto; }
-            .overview-card-actions { grid-column: 1; justify-content: flex-end; }
+            .overview-card-actions { justify-content: flex-end; }
             .fund-title-main { font-size: 1.25rem; }
             .stats-grid { grid-template-columns: 1fr; gap: 12px; }
             .stat-card { padding: 16px; }
@@ -429,6 +444,9 @@
         @media (max-width: 480px) {
             .optional-inputs { grid-template-columns: 1fr; }
             .fund-code-large, .market-status, .update-time { font-size: 0.75rem; padding: 4px 10px; }
+            .overview-refresh-btn { width: 36px; height: 36px; padding: 0; border-radius: 999px; gap: 0; }
+            .overview-refresh-btn .refresh-text { display: none; }
+            .overview-card-metric, .overview-card-time { flex: 1 1 calc(50% - 5px); }
         }
     </style>
 </head>
@@ -613,10 +631,16 @@
             <!-- 基金概览视图 -->
             <div class="fund-overview-view" id="fundOverviewView">
                 <div class="overview-header">
-                    <h1 class="overview-title">基金概览</h1>
-                    <p class="overview-subtitle">点击任意卡片查看详情</p>
+                    <div>
+                        <h1 class="overview-title">基金概览</h1>
+                        <p class="overview-subtitle">点击任意卡片查看详情</p>
+                    </div>
+                    <button class="overview-refresh-btn" id="overviewRefreshBtn" onclick="refreshAllFunds()" title="刷新所有基金数据">
+                        <span class="refresh-icon">🔄</span>
+                        <span class="refresh-text">刷新</span>
+                    </button>
                 </div>
-                <div class="overview-grid" id="overviewGrid"></div>
+                <div id="overviewGrid"></div>
             </div>
             
             <!-- 基金详情视图 -->
@@ -1775,6 +1799,7 @@
 
         window.addEventListener('DOMContentLoaded', () => { 
             console.log('Higher | 9880699@gmail.com');
+            console.log('🚀 性能优化已启用: DocumentFragment批量DOM, requestIdleCallback懒加载, 图表节流200ms, 事件委托');
             initChart(); 
             renderFundList(); 
             fetchMarketIndices(); 
@@ -2266,12 +2291,6 @@
             }, { notMerge: false, lazyUpdate: true, silent: true });
         }
 
-        function getMiniRealtimeSeries(fund) {
-            const series = getRealtimeSeriesForChart(fund);
-            let end = getEffectiveRealtimeEndIndex(series);
-            if (end < 0) return [];
-            return series.slice(0, end + 1);
-        }
 
         function findLastFiniteIndex(arr) {
             if (!Array.isArray(arr)) return -1;
@@ -3424,21 +3443,6 @@
             return -1;
         }
 
-        function getRealtimeEndIndex() {
-            const t = getShanghaiTimeParts();
-            const min = t.hour * 60 + t.minute;
-            if (t.dow === 0 || t.dow === 6) return -1;
-            // 盘前
-            if (min < 570) return -1;
-            // 上午 09:30 - 11:30
-            if (min <= 690) return min - 570;
-            // 午休：固定到 11:30
-            if (min < 780) return 120;
-            // 下午 13:00 - 15:00
-            if (min <= 900) return 121 + (min - 780);
-            // 盘后：固定到 15:00
-            return 241;
-        }
 
         function updateMarketStatusUI() {
             const s = getMarketStatus();
@@ -3507,11 +3511,6 @@
             return out;
         }
 
-        function getFundBuyInfo(fund) {
-            const buys = getFundBuys(fund);
-            if (!buys.length) return { amount: null, date: null };
-            return { amount: buys[0].amount, date: buys[0].date };
-        }
 
         function getFirstHistoryPointOnOrAfter(code, dateStr) {
             const all = historyCache[code];
@@ -3966,6 +3965,36 @@
             if (mobileOverviewBtn) mobileOverviewBtn.style.display = 'none';
             
             renderFundOverview();
+        }
+
+        // 一键刷新所有基金数据
+        async function refreshAllFunds() {
+            const btn = document.getElementById('overviewRefreshBtn');
+            if (!btn) return;
+            
+            // 防止重复点击
+            if (btn.disabled) return;
+            
+            btn.classList.add('refreshing');
+            btn.disabled = true;
+            
+            try {
+                // 顺序刷新所有基金（避免并发请求过多）
+                for (const fund of funds) {
+                    await fetchFundData(fund, { suppressRender: true });
+                }
+                
+                // 刷新完成后更新UI
+                renderFundList();
+                renderFundOverview();
+                showToast('所有基金数据已刷新');
+            } catch (error) {
+                console.error('刷新失败:', error);
+                showToast('刷新失败，请稍后重试', 'error');
+            } finally {
+                btn.classList.remove('refreshing');
+                btn.disabled = false;
+            }
         }
 
         function getSecId(code) {
