@@ -2534,7 +2534,14 @@
         function refreshFundByCode(code) {
             const fund = funds.find(f => f.code === code);
             if (!fund) return;
-            return fetchFundData(fund);
+            return (async () => {
+                await fetchFundData(fund);
+                try {
+                    delete historyCache[fund.code];
+                    await fetchHistoryData(fund.code, false);
+                } catch (e) {
+                }
+            })();
         }
 
         function initMobileSwipeNavigation() {
@@ -2990,7 +2997,16 @@
             try {
                 const data = await (fundgzQueue = fundgzQueue.then(() => fetchWithFallback(fund.code)));
                 fund.name = data.name;
-                fund.currentNav = data.dwjz;
+                // 防回退：如果接口返回的官方净值日期更早（常见于夜间/跨日缓存），不要覆盖本地已拿到的更新日期净值
+                const incomingNavDateStr0 = getDateStr(data.jzrq);
+                const existingNavDateStr0 = getDateStr(fund.navDate);
+                const shouldUpdateOfficialNav0 = !existingNavDateStr0
+                    || !incomingNavDateStr0
+                    || (incomingNavDateStr0 >= existingNavDateStr0);
+                if (shouldUpdateOfficialNav0) {
+                    fund.currentNav = data.dwjz;
+                    fund.navDate = data.jzrq;
+                }
                 // 统一口径：fund.dayGrowth 代表“估算日涨跌幅”（交易中），来源可能是 fundgz 或持仓估算
                 // 防回退：如果接口返回了更早的 gztime（旧数据），不要覆盖最新显示与曲线
                 const sh0 = getShanghaiTimeParts();
@@ -3010,7 +3026,7 @@
                 if (acceptGz && gzIdx >= 0) fund._lastGzIdx = gzIdx;
 
                 // 关键修复：今日官方净值已出时，不再用估算数据覆盖
-                const navDateStr = getDateStr(data.jzrq);
+                const navDateStr = incomingNavDateStr0;
                 const shouldAcceptEstimate = !(navDateStr === todayStr0 && acceptGz);
 
                 // 今日官方快照：若接口返回的 gsz 与 dwjz 相同，视作官方净值口径，直接写入官方日涨跌幅
@@ -3036,10 +3052,9 @@
                     fund.estimatedNav = data.gsz;
                     fund.estimatedTime = data.gztime;
                 }
-                fund.navDate = data.jzrq;
                 const status = getMarketStatus();
                 const gszNum0 = parseFloat(data.gsz);
-                const dwjzNum0 = parseFloat(data.dwjz);
+                const dwjzNum0 = parseFloat(shouldUpdateOfficialNav0 ? data.dwjz : fund.currentNav);
                 const seed = status.canRealtimeUpdate
                     ? ((Number.isFinite(gszNum0) && gszNum0 > 0) ? gszNum0 : dwjzNum0)
                     : dwjzNum0;
@@ -4625,12 +4640,15 @@
 
             try {
                 const status = getMarketStatus();
+                const shNow0 = getShanghaiTimeParts();
+                const todayStr0 = `${shNow0.year}-${String(shNow0.month).padStart(2,'0')}-${String(shNow0.day).padStart(2,'0')}`;
                 // 顺序刷新所有基金（避免并发请求过多）
                 for (const fund of funds) {
                     await fetchFundData(fund, { suppressRender: true });
 
-                    // 盘前/休市：同步刷新官方历史净值，用“最近一交易日官方口径”覆盖展示
-                    if (!status.canRealtimeUpdate) {
+                    const navDateStr0 = getDateStr(fund.navDate);
+                    const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
+                    if (needPromoteOfficialNav0) {
                         try {
                             delete historyCache[fund.code];
                             await fetchHistoryData(fund.code, false);
@@ -5754,17 +5772,18 @@
                 console.log(`✅ [历史-pingzhongdata] ${code} 共 ${raw.length} 条，已缓存`);
 
                 // 用最新一条同步净值
-                if (selectedFund && selectedFund.code === code) {
+                const fundRef = funds.find(f => f.code === code);
+                if (fundRef) {
                     const latest = raw[raw.length - 1];
-                    const prev   = raw.length >= 2 ? raw[raw.length - 2] : null;
                     const jzrq   = tsToDateStr(latest.x);
-                    if (jzrq > (selectedFund.navDate || '')) {
-                        selectedFund.navDate  = jzrq;
-                        selectedFund.currentNav = latest.y;
+                    if (jzrq > (fundRef.navDate || '')) {
+                        fundRef.navDate  = jzrq;
+                        fundRef.currentNav = latest.y;
                         saveFunds();
                     }
-                    // 无论 navDate 是否变更，都需要刷新主面板（否则会卡在“加载中/预买入”直到用户点击）
-                    updateMainDisplay(selectedFund);
+                    if (selectedFund && selectedFund.code === code) {
+                        updateMainDisplay(selectedFund);
+                    }
                 }
 
                 if (renderChart) renderHistoryChart(code);
