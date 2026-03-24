@@ -229,6 +229,7 @@
         .overview-refresh-btn { padding: 12px 18px; border: 1.5px solid var(--primary); background: white; border-radius: 12px; font-size: 0.875rem; font-weight: 800; color: var(--primary); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
         .overview-refresh-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.22); }
         .overview-refresh-btn:active { transform: translateY(0); }
+        .overview-refresh-btn:focus { outline: none; }
         .overview-refresh-btn .refresh-icon { font-size: 1.05rem; transition: transform 0.6s; }
         .overview-refresh-btn.refreshing .refresh-icon { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -374,6 +375,10 @@
         @media (hover: hover) and (pointer: fine) {
             .swipe-hint, .swipe-hint.show { display: none !important; }
         }
+
+        @media (hover: none) and (pointer: coarse) {
+            .overview-refresh-btn:hover { background: white; color: var(--primary); transform: none; box-shadow: none; }
+        }
         
         /* 移动端适配 */
         @media (max-width: 1200px) { 
@@ -401,11 +406,11 @@
             .sidebar-overlay.active { display: block; }
             .sidebar-resizer { display: none !important; }
             .keyboard-hint { display: none !important; }
-            .main-content { margin-left: 0; touch-action: pan-y; }
-            .main-header { padding: 80px 16px 16px; }
+            .main-content { margin-left: 0; touch-action: pan-x pan-y; }
+            .main-header { padding: 80px 16px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
             .fund-overview-view { padding: 16px; }
             .overview-header { margin-bottom: 16px; }
-            .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 999px; }
+            .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 12px; }
             .overview-list { gap: 12px; }
             .overview-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 10px; padding: 12px; }
             .overview-card-info { order: 1; flex: 1 1 auto; min-width: 0; }
@@ -439,12 +444,18 @@
             .index-card { padding: 10px 12px; min-height: auto; }
             .index-card.selected { grid-column: span 1; }
             .index-value { font-size: 1rem; }
+
+            .toast-container { top: auto; right: auto; left: 50%; bottom: 16px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 420px; gap: 10px; }
+            .toast { padding: 12px 14px; border-radius: 12px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14); animation: toastUp 0.22s ease-out; }
+            .toast .toast-row { gap: 10px; }
+            .toast .toast-msg { font-size: 0.875rem; line-height: 1.35; }
+            @keyframes toastUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         }
         
         @media (max-width: 480px) {
             .optional-inputs { grid-template-columns: 1fr; }
             .fund-code-large, .market-status, .update-time { font-size: 0.75rem; padding: 4px 10px; }
-            .overview-refresh-btn { width: 36px; height: 36px; padding: 0; border-radius: 999px; gap: 0; }
+            .overview-refresh-btn { width: 36px; height: 36px; padding: 0; border-radius: 12px; gap: 0; }
             .overview-refresh-btn .refresh-text { display: none; }
             .overview-card-metric, .overview-card-time { flex: 1 1 calc(50% - 5px); }
         }
@@ -1403,6 +1414,60 @@
             try { indexChart.resize(); } catch {}
         }
 
+        function initMobileHeaderPullToggle() {
+            const header = document.querySelector('.main-header');
+            if (!header) return;
+
+            let startX = 0;
+            let startY = 0;
+            let triggered = false;
+            let isVertical = false;
+
+            const isMobile = () => window.innerWidth <= 768;
+
+            header.addEventListener('touchstart', (e) => {
+                if (!isMobile()) return;
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+                startX = t.clientX;
+                startY = t.clientY;
+                triggered = false;
+                isVertical = false;
+            }, { passive: true });
+
+            header.addEventListener('touchmove', (e) => {
+                if (!isMobile() || triggered) return;
+                const t = e.touches && e.touches[0];
+                if (!t) return;
+
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+
+                if (!isVertical) {
+                    if (Math.abs(dy) < 18) return;
+                    if (Math.abs(dy) <= Math.abs(dx) * 1.2) return;
+                    isVertical = true;
+                }
+
+                const threshold = 70;
+                if (Math.abs(dy) < threshold) return;
+
+                const wrapper = document.getElementById('statsGridWrapper');
+                if (!wrapper) return;
+
+                const isCollapsed = wrapper.classList.contains('collapsed');
+                const shouldCollapse = dy < 0;
+                const shouldExpand = dy > 0;
+
+                if ((shouldCollapse && isCollapsed) || (shouldExpand && !isCollapsed)) return;
+
+                triggered = true;
+                const btn = document.getElementById('headerCollapseBtn');
+                if (btn) btn.click();
+                else toggleHeaderStats();
+            }, { passive: true });
+        }
+
         async function fetchAndDrawIndexKline(key) {
             const config = MARKET_INDICES[key];
             if (!config) return;
@@ -1817,12 +1882,13 @@
             
             startAutoUpdate(); 
             
+            initMobileHeaderPullToggle();
+            
             // 快捷键提示：首次访问时显示10秒后淡出
             const keyboardHint = document.getElementById('keyboardHint');
-            const hintShownKey = 'keyboard_hint_shown';
-            const hasShown = localStorage.getItem(hintShownKey);
-            
-            if (!hasShown && keyboardHint) {
+            if (keyboardHint && localStorage.getItem('keyboardHintShown') !== '1') {
+                localStorage.setItem('keyboardHintShown', '1');
+
                 // 延迟300ms后淡入显示
                 setTimeout(() => {
                     keyboardHint.classList.add('show');
@@ -1832,9 +1898,6 @@
                 setTimeout(() => {
                     keyboardHint.classList.remove('show');
                     keyboardHint.classList.add('hide');
-                    
-                    // 标记已显示过
-                    localStorage.setItem(hintShownKey, 'true');
                 }, 10300);
             }
             
@@ -2022,8 +2085,6 @@
             let startY = 0;
             let moved = false;
             let tracking = false;
-            let pointerId = null;
-            let pointerCaptured = false;
 
             const minDx = 60;
             const maxDy = 45;
@@ -2090,7 +2151,9 @@
 
             showHintOnce();
 
-            if (hasPointer) {
+            if (hasPointer && !isMobile()) {
+                let pointerId = null;
+                let pointerCaptured = false;
                 root.addEventListener('pointerdown', (e) => {
                     if (!canHandle(e)) return;
                     if (isInteractiveTarget(e)) return;
@@ -4060,6 +4123,7 @@
         async function refreshAllFunds() {
             const btn = document.getElementById('overviewRefreshBtn');
             if (!btn) return;
+            if (typeof btn.blur === 'function') btn.blur();
             
             // 防止重复点击
             if (btn.disabled) return;
@@ -4083,6 +4147,7 @@
             } finally {
                 btn.classList.remove('refreshing');
                 btn.disabled = false;
+                if (typeof btn.blur === 'function') btn.blur();
             }
         }
 
