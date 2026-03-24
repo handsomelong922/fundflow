@@ -770,8 +770,6 @@
         let holdingsCache = {}; // { [fundCode]: { holdings: [{code, ratio, chg}], top10Weight, top10Contribution, estDayChg, timestamp } }
         let chart = null;
         let miniCharts = {};
-        let updateInterval = null;
-        let realtimeInterval = null;
         let currentTimeRange = 'realtime';
         let historyCache = {}; // { [fundCode]: [{x, y}, ...] } 缓存 pingzhongdata 全部历史
         let historyTableState = { code: null, rendered: 0, pageSize: 10 };
@@ -790,7 +788,6 @@
         
         // 性能优化：防抖渲染
         let renderFundListTimer = null;
-        let renderOverviewTimer = null;
 
         // 添加基金区域折叠
         function toggleAddFund() {
@@ -2218,9 +2215,6 @@
                 return; 
             }
             
-            const status = getMarketStatus();
-            const isRealtime = (status.canRealtimeUpdate || status.reason === '午间休市');
-            
             // 检查是否需要完全重建（基金数量或顺序变化）
             const existingItems = Array.from(listEl.querySelectorAll('.fund-item'));
             const needsRebuild = existingItems.length !== funds.length || 
@@ -2679,6 +2673,15 @@
             const est = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
             const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(est);
 
+            // 若已明确拿到“官方当日涨跌幅”，全局优先展示官方（避免卡片/详情与日涨跌幅卡片不一致）
+            const newestDate = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+            const newestChg = Number(fund && fund._baiduNewestDayGrowth);
+            if (newestDate === todayStr && Number.isFinite(newestChg)) return newestChg;
+
+            const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
+            const v0 = parseFloat(fund && fund.dayGrowth);
+            if (src0 === 'official' && Number.isFinite(v0)) return v0;
+
             // 夜间官方净值已更新：优先官方口径（避免继续显示“今日估算”造成误解）
             if (navDateStr === todayStr) {
                 const off0 = getOfficialDayGrowthFromHistory(fund);
@@ -2746,15 +2749,6 @@
             const min = ny.hour * 60 + ny.minute;
             // 美股常规交易时段：09:30-16:00（纽约时间，自动处理夏令时）
             return min >= 9 * 60 + 30 && min <= 16 * 60;
-        }
-
-        function formatLastGzTimeForAshare(gztime) {
-            if (!gztime || typeof gztime !== 'string') return gztime;
-            let m = gztime.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
-            if (!m) return gztime;
-            const minutes = parseInt(m[4]) * 60 + parseInt(m[5]);
-            const date = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-            return minutes > 15 * 60 ? `${date} 15:00` : `${date} ${m[4].padStart(2,'0')}:${m[5].padStart(2,'0')}`;
         }
 
         function getDateStr(dateTimeStr) {
@@ -2852,9 +2846,12 @@
                         }
                     }
                 }
-                if (acceptGz && shouldAcceptEstimate) {
-                    fund.lastUpdateTime = formatLastGzTimeForAshare(data.gztime) || '';
-                }
+                // “更新于”展示口径：以本次请求完成时间为准（接口在休市/夜间常返回 15:00，作为更新时间会误导）
+                const shNow = getShanghaiTimeParts();
+                const todayStrNow = `${shNow.year}-${String(shNow.month).padStart(2,'0')}-${String(shNow.day).padStart(2,'0')}`;
+                const hhNow = String(shNow.hour).padStart(2, '0');
+                const mmNow = String(shNow.minute).padStart(2, '0');
+                fund.lastUpdateTime = `${todayStrNow} ${hhNow}:${mmNow}`;
                 saveFunds();
                 if (!options.suppressRender) {
                     // 防抖渲染，避免频繁DOM操作
@@ -3222,12 +3219,12 @@
                     const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(estNavNum) && estNavNum > 0;
 
                     if (hasTodayEst) {
-                        const estChgNum = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
+                        const chgNum = getDisplayDayGrowth(fund);
                         document.getElementById('estimatedNav').textContent = estNavNum.toFixed(4);
-                        document.getElementById('estimatedChange').textContent = Number.isFinite(estChgNum)
-                            ? ((estChgNum >= 0 ? '+' : '') + estChgNum.toFixed(2) + '%')
+                        document.getElementById('estimatedChange').textContent = Number.isFinite(chgNum)
+                            ? ((chgNum >= 0 ? '+' : '') + chgNum.toFixed(2) + '%')
                             : '--';
-                        document.getElementById('estimatedChange').className = `stat-change ${Number.isFinite(estChgNum) && estChgNum >= 0 ? 'positive' : 'negative'}`;
+                        document.getElementById('estimatedChange').className = `stat-change ${Number.isFinite(chgNum) && chgNum >= 0 ? 'positive' : 'negative'}`;
                         document.getElementById('estLabel').textContent = '估算净值';
                     } else {
                         document.getElementById('estimatedNav').textContent = '--';
@@ -3243,18 +3240,26 @@
             let showUpdateTime = fund.lastUpdateTime || '--';
             let useDelay = true;
             // 收盘数据已到：只要展示为 15:00，就不再显示“延迟xx分钟”（避免盘后补全/口径差异造成误导）
-            if (/\b15:00$/.test(showUpdateTime)) {
-                useDelay = false;
-            }
-            // 若今日官方净值已出，但估值源(gztime)滞后到旧日期，避免“更新于 01-30”这种误导
-            if (navDateStr2 === todayStr2) {
-                const lastDateStr = getDateStr(showUpdateTime);
-                if (lastDateStr && lastDateStr !== todayStr2) {
-                    showUpdateTime = `${todayStr2} 15:00`;
-                    useDelay = false;
+            if (typeof showUpdateTime === 'string') {
+                const m = showUpdateTime.match(/\b(\d{1,2}):(\d{2})$/);
+                if (m) {
+                    const hh = parseInt(m[1]);
+                    const mm = parseInt(m[2]);
+                    const mins = hh * 60 + mm;
+                    if (Number.isFinite(mins) && mins >= 900) useDelay = false;
                 }
             }
-            const delayMin = useDelay ? getGzDelayMinutes(showUpdateTime) : null;
+            // 延迟分钟口径：仅基于估值源时间（gztime/estimatedTime），不要用“更新于”(请求完成时间)去算
+            const estTimeForDelay = (fund && typeof fund.estimatedTime === 'string') ? fund.estimatedTime : '';
+            if (navDateStr2 === todayStr2) {
+                // 今日官方净值已出：不再展示“延迟xx分钟”
+                useDelay = false;
+            } else {
+                // 今日官方净值未出：若估值时间不是今天，也不展示延迟（避免跨日误导）
+                const estDateStr = getDateStr(estTimeForDelay);
+                if (estDateStr && estDateStr !== todayStr2) useDelay = false;
+            }
+            const delayMin = useDelay ? getGzDelayMinutes(estTimeForDelay) : null;
             const delayText = (useDelay && Number.isFinite(delayMin) && delayMin >= 2) ? `（延迟${delayMin}分钟）` : '';
             document.getElementById('updateTime').textContent = '更新于 ' + showUpdateTime + delayText;
             updateReminderBadge();
@@ -3679,11 +3684,11 @@
                 return;
             }
 
-            // 夜间官方净值已更新：强制展示官方口径（并标注日期时间）
+            // 今日已出官方净值：优先官方涨跌幅（历史净值差分）
             if (navDateStr === todayStr) {
                 const off = getOfficialDayGrowthFromHistory(fund);
                 if (Number.isFinite(off)) {
-                    if (Number.isFinite(off)) fund.dayGrowth = off;
+                    fund.dayGrowth = off;
                     fund._dayGrowthSource = 'official';
                     el.innerHTML = (off >= 0 ? '+' : '') + off.toFixed(2) + '%';
                     el.className = `stat-value ${off >= 0 ? 'positive' : 'negative'}`;
@@ -4226,7 +4231,17 @@
             const fund = { code, buys: hasBuy ? [{ amount: buyAmount, date: buyDate }] : [], buyAmount: null, buyDate: null, name: '加载中...', currentNav: '--', dayGrowth: '--' };
             funds.push(fund); saveFunds(); renderFundList();
             document.getElementById('fundCode').value = ''; document.getElementById('buyAmount').value = ''; document.getElementById('buyDate').value = '';
-            await fetchFundData(fund); showToast('添加成功');
+
+            await fetchFundData(fund);
+            renderFundList();
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent && mainContent.classList.contains('overview-mode')) {
+                renderFundOverview();
+            }
+
+            showToast('添加成功');
+            // 新增后直接选中该基金，避免仍停留在旧基金详情导致看到旧的“更新于”
+            try { selectFund(fund); } catch (e) { /* ignore */ }
             if (window.innerWidth <= 768) { closeMobileSidebar(); }
         }
         
