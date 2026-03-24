@@ -5149,6 +5149,10 @@
                         fundRefreshCursor++;
                         await fetchFundData(f, { suppressRender: true });
                         renderFundList();
+                        const mainContent = document.querySelector('.main-content');
+                        if (mainContent && mainContent.classList.contains('overview-mode')) {
+                            renderFundOverview();
+                        }
                         if (selectedFund?.code === f.code) {
                             updateMainDisplay(selectedFund);
                             if (currentTimeRange === 'realtime') updateRealtimeChart();
