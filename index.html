@@ -1537,7 +1537,6 @@
             const nowTs = Date.now();
             const trendTasks = [];
             for (const [k, cfg] of Object.entries(MARKET_INDICES)) {
-                if (cfg.type !== 'cn') continue;
                 const cached = indexTrendCache[k];
                 const fresh = cached && (nowTs - (cached.updatedAt || 0) < 20000);
                 if (!fresh) trendTasks.push(fetchIndexTrendSnapshot(k, cfg));
@@ -1546,112 +1545,38 @@
                 await Promise.allSettled(trendTasks);
             }
 
-            const indexSources = [
-                {
-                    name: 'eastmoney_api',
-                    fetch: async (secid) => {
-                        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f3,f169,f170,f60,f86&_=${Date.now()}`;
-                        return await runWithSourceStat('index_stock_get_jsonp', async () => await fetchJsonp(url, 'cb', 12000));
-                    }
-                }
-            ];
-
             const indexCards = [];
             
             for (const [key, config] of Object.entries(MARKET_INDICES)) {
-                let data = null;
-                
-                for (const source of indexSources) {
-                    try {
-                        const result = await Promise.race([
-                            source.fetch(config.secid),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
-                        ]);
-                        if (result?.data) { data = result.data; break; }
-                    } catch (error) {
-                        console.warn(`[指数-${config.name}-${source.name}] 失败:`, error.message);
-                        continue;
+                const cached = indexTrendCache[key];
+                const fresh = cached && (nowTs - (cached.updatedAt || 0) < 2 * 60 * 1000);
+                const lastPrice = fresh ? cached.prices?.[cached.prices.length - 1] : NaN;
+                const preClose = fresh ? cached.preClose : NaN;
+                const pct = (fresh && Number.isFinite(lastPrice) && Number.isFinite(preClose) && preClose !== 0) ? ((lastPrice - preClose) / preClose * 100) : NaN;
+
+                const isCn = config.type === 'cn';
+                let isClosed = false;
+                if (isCn) {
+                    const s = getMarketStatus();
+                    isClosed = !s.isOpen;
+                } else {
+                    if (config.type === 'us') {
+                        isClosed = !isUsMarketOpenNow();
+                    } else {
+                        const today = new Date();
+                        const day = today.getDay();
+                        if (day === 0 || day === 6) isClosed = true;
                     }
                 }
 
-                if (data) {
-                    const price = (data.f43 !== undefined && data.f43 !== null && data.f43 !== '-') ? data.f43 : data.f60;
-                    const priceNum = Number(price);
-                    const isCn = config.type === 'cn';
-                    let isClosed = false;
-                    if (isCn) {
-                        const s = getMarketStatus();
-                        isClosed = !s.isOpen;
-                    } else {
-                        if (config.type === 'us') {
-                            isClosed = !isUsMarketOpenNow();
-                        } else {
-                            const today = new Date();
-                            const day = today.getDay();
-                            if (day === 0 || day === 6) isClosed = true;
-                        }
-                    }
+                if (fresh && Number.isFinite(lastPrice)) {
+                    const isPositive = Number.isFinite(pct) ? (pct >= 0) : true;
+                    const finalPrice = lastPrice.toFixed(2);
+                    const formattedChange = Number.isFinite(pct) ? ((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%') : '--';
+                    const timeStr = (Array.isArray(cached.times) && cached.times.length > 0) ? (cached.times[cached.times.length - 1] || '--') : '--';
 
-                    let changePct = 0;
-                    const f3Num = (data.f3 !== undefined && data.f3 !== null && data.f3 !== '-') ? parseFloat(data.f3) : NaN;
-                    const f170Num = (data.f170 !== undefined && data.f170 !== null && data.f170 !== '-') ? Number(data.f170) : NaN;
-                    const closeRawNum = Number(data.f43);
-                    const preCloseRawNum = Number(data.f60);
-                    const closeForPctNum = Number.isFinite(closeRawNum) ? closeRawNum : priceNum;
-                    // A股在休市时：用最近收盘口径（收盘价 vs 昨收）
-                    if (isCn && isClosed) {
-                        if (Number.isFinite(closeForPctNum) && Number.isFinite(preCloseRawNum) && preCloseRawNum !== 0) {
-                            changePct = (closeForPctNum - preCloseRawNum) / preCloseRawNum * 100;
-                        } else if (Number.isFinite(f170Num) && Number.isFinite(priceNum)) {
-                            const preClose = priceNum - f170Num;
-                            if (preClose) changePct = (f170Num / preClose) * 100;
-                        } else if (Number.isFinite(f3Num)) {
-                            changePct = f3Num;
-                        }
-                    } else {
-                        // 交易中（或非A股指数）：优先用接口实时涨跌幅
-                        if (Number.isFinite(f3Num)) {
-                            changePct = f3Num;
-                        } else if (Number.isFinite(f170Num) && Number.isFinite(priceNum)) {
-                            const preClose = priceNum - f170Num;
-                            if (preClose) changePct = (f170Num / preClose) * 100;
-                        }
-                    }
+                    marketIndices[key] = { price: finalPrice, change: pct, changePct: formattedChange, time: timeStr, secid: config.secid, name: config.name };
 
-                    // 兜底：部分指数在交易中 f3/f170 可能缺失或返回 0，但 f43/f60 是可靠的（现价/昨收）
-                    if ((!Number.isFinite(changePct) || Math.abs(changePct) < 1e-9) && Number.isFinite(closeForPctNum) && Number.isFinite(preCloseRawNum) && preCloseRawNum !== 0) {
-                        changePct = (closeForPctNum - preCloseRawNum) / preCloseRawNum * 100;
-                    }
-                    const updateTime = data.f86 || '--';
-                    const isPositive = changePct >= 0;
-                    let finalPrice = price > 10000 && config.type === 'cn' ? (price/100).toFixed(2) : (price/100).toFixed(2);
-                    let formattedChange = (changePct !== undefined) ? (isPositive ? '+' : '') + parseFloat(changePct).toFixed(2) + '%' : '--';
-                    
-                    let timeStr = '--';
-                    if (updateTime && updateTime !== '--') {
-                        const d = new Date(updateTime * 1000);
-                        timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                    }
-
-                    // 如果该指数已经展开过并拉取了 trends2/get，则用走势缓存覆盖卡片价格与涨跌幅，确保与图对齐
-                    {
-                        const cached = indexTrendCache[key];
-                        const fresh = cached && (nowTs - (cached.updatedAt || 0) < 2 * 60 * 1000);
-                        const lastPrice = fresh ? cached.prices?.[cached.prices.length - 1] : NaN;
-                        const preClose = fresh ? cached.preClose : NaN;
-                        const pct = (fresh && Number.isFinite(lastPrice) && Number.isFinite(preClose) && preClose !== 0) ? ((lastPrice - preClose) / preClose * 100) : NaN;
-                        if (fresh && Number.isFinite(lastPrice)) {
-                            finalPrice = lastPrice.toFixed(2);
-                            if (Number.isFinite(pct)) {
-                                changePct = pct;
-                                formattedChange = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
-                            }
-                            if (Array.isArray(cached.times) && cached.times.length > 0) timeStr = cached.times[cached.times.length - 1] || timeStr;
-                        }
-                    }
-                    
-                    marketIndices[key] = { price: finalPrice, change: changePct, changePct: formattedChange, time: timeStr, secid: config.secid, name: config.name };
-                    
                     indexCards.push(`
                         <div class="index-card ${isPositive ? 'positive' : 'negative'} ${selectedIndexKey === key ? 'selected' : ''} ${isClosed ? 'closed' : ''}" 
                              onclick="selectIndex('${key}')" id="indexCard_${key}">
@@ -2368,6 +2293,15 @@
             }
             
             startAutoUpdate(); 
+
+            setTimeout(() => {
+                refreshLock = refreshLock.then(async () => {
+                    if (!Array.isArray(funds) || funds.length === 0) return;
+                    await refreshAllFunds({ fromInit: true, skipHistory: true });
+                    lastFundRefreshAt = Date.now();
+                    fundRefreshCursor = 0;
+                }).catch(err => console.warn('init refresh error:', err));
+            }, 0);
             
             initMobileHeaderPullToggle();
             
@@ -2541,6 +2475,58 @@
             if (fund) selectFund(fund);
         }
 
+        function updateFundListActiveOnly(code) {
+            const listEl = document.getElementById('fundList');
+            if (!listEl) return;
+            const prev = listEl.querySelector('.fund-item.active');
+            if (prev && prev.dataset.code !== code) prev.classList.remove('active');
+            const cur = listEl.querySelector(`.fund-item[data-code="${code}"]`);
+            if (cur) {
+                // 分帧触发 transition，避免 class 同步切换时过渡效果不明显
+                requestAnimationFrame(() => cur.classList.add('active'));
+            }
+        }
+
+        async function refreshOneFundFull(fund, options = {}) {
+            if (!fund || !fund.code) return;
+
+            const suppressRender = !!options.suppressRender;
+            const includeHoldings = !!options.includeHoldings;
+            const skipPositionHistory = !!options.skipPositionHistory;
+            const refreshHistoryForDayGrowth = (options.refreshHistoryForDayGrowth !== false);
+            const newestOptions = (options.newestOptions && typeof options.newestOptions === 'object') ? options.newestOptions : undefined;
+
+            await fetchFundData(fund, { suppressRender: true });
+            try { await fetchBaiduNewestForFund(fund, newestOptions || {}); } catch (e) { }
+            if (!skipPositionHistory) {
+                await ensureHistoryForPositionIfNeeded(fund);
+            }
+
+            if (refreshHistoryForDayGrowth) {
+                try {
+                    delete historyCache[fund.code];
+                    await fetchHistoryData(fund.code, false);
+                } catch (e) {
+                }
+            }
+
+            if (includeHoldings) {
+                try { await loadHoldingsAndSectors(fund, { silent: true }); } catch (e) { }
+            }
+
+            if (!suppressRender) {
+                renderFundList();
+                const mainContent0 = document.querySelector('.main-content');
+                if (mainContent0 && mainContent0.classList.contains('overview-mode')) {
+                    renderFundOverview();
+                }
+                if (selectedFund?.code === fund.code) {
+                    updateMainDisplay(selectedFund);
+                    if (currentTimeRange === 'realtime') updateRealtimeChart();
+                }
+            }
+        }
+
         // 只初始化可见区域的图表（懒加载）
         function initVisibleMiniCharts() {
             const listEl = document.getElementById('fundList');
@@ -2564,16 +2550,8 @@
             const fund = funds.find(f => f.code === code);
             if (!fund) return;
             return (async () => {
-                await fetchFundData(fund);
-                try {
-                    delete historyCache[fund.code];
-                    await fetchHistoryData(fund.code, false);
-                } catch (e) {
-                }
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent && mainContent.classList.contains('overview-mode')) {
-                    renderFundOverview();
-                }
+                const includeHoldings = (selectedFund?.code === fund.code);
+                await refreshOneFundFull(fund, { includeHoldings });
                 showToast(`${fund.name || fund.code} 数据已刷新`);
             })();
         }
@@ -4222,6 +4200,84 @@
             return walk(json);
         }
 
+        function buildGushitongSources(targetUrl, options = {}) {
+            const proxyOff = (localStorage.getItem('BAIDU_PROXY_OFF') || '') === '1';
+            const corsProxy = ((localStorage.getItem('BAIDU_CORS_PROXY') || '').trim() || 'https://api.allorigins.win/get?url=');
+            const allowDirect = (localStorage.getItem('BAIDU_DIRECT') || '') === '1';
+            const timeoutJsonp = Number.isFinite(options.timeoutJsonpMs) ? Number(options.timeoutJsonpMs) : 2500;
+            const timeoutProxy = Number.isFinite(options.timeoutProxyMs) ? Number(options.timeoutProxyMs) : 10000;
+            const timeoutDirect = Number.isFinite(options.timeoutDirectMs) ? Number(options.timeoutDirectMs) : 9000;
+
+            async function fetchViaProxy(url, proxyPrefix) {
+                const proxyUrl = `${proxyPrefix}${encodeURIComponent(url)}`;
+                const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeoutProxy) });
+                if (!res.ok) throw new Error(`proxy http ${res.status}`);
+                let payload;
+                try {
+                    payload = await res.json();
+                } catch {
+                    const text = await res.text();
+                    payload = JSON.parse(text);
+                }
+                const raw = payload && typeof payload === 'object' && typeof payload.contents === 'string'
+                    ? payload.contents
+                    : payload;
+                if (typeof raw === 'string') return JSON.parse(raw);
+                return raw;
+            }
+
+            const sources = [];
+            sources.push({
+                name: 'gushitong_jsonp',
+                fetch: async () => {
+                    try {
+                        return await fetchJsonp(targetUrl, 'cb', timeoutJsonp);
+                    } catch {
+                        return await fetchJsonp(targetUrl, 'callback', timeoutJsonp);
+                    }
+                }
+            });
+            if (!proxyOff && corsProxy) {
+                sources.push({
+                    name: 'gushitong_proxy',
+                    fetch: async () => await fetchViaProxy(targetUrl, corsProxy)
+                });
+            }
+            if (allowDirect) {
+                sources.push({
+                    name: 'gushitong_direct',
+                    fetch: async () => {
+                        const res = await fetch(targetUrl, { signal: AbortSignal.timeout(timeoutDirect) });
+                        return await res.json();
+                    }
+                });
+            }
+            return sources;
+        }
+
+        async function fetchBaiduNewestForFund(fund, options = {}) {
+            if (!fund || !fund.code) return false;
+            const st0 = getMarketStatus();
+            if (st0 && (st0.canRealtimeUpdate || st0.reason === '午间休市')) return false;
+            const url = `https://gushitong.baidu.com/opendata?resource_id=5803&query=${fund.code}&new_need_di=1&source=qieman`;
+            const sources = buildGushitongSources(url, options);
+
+            for (const src of sources) {
+                try {
+                    const json = await runWithSourceStat(`newest_${src.name}`, async () => await src.fetch());
+                    const newest = extractBaiduNewestDayGrowth(json);
+                    if (newest && newest.dateStr) {
+                        if (Number.isFinite(newest.chg)) fund._baiduNewestDayGrowth = newest.chg;
+                        if (Number.isFinite(newest.nav)) fund._baiduNewestNav = newest.nav;
+                        fund._baiduNewestDayGrowthDate = newest.dateStr;
+                        return true;
+                    }
+                } catch {
+                }
+            }
+            return false;
+        }
+
         function calcPositionMetricsOfficialT2FromBuys(fund) {
             if (!fund || !fund.code) return { ok: false };
             const buys = getFundBuys(fund);
@@ -4562,10 +4618,23 @@
 
         function selectFund(fund) {
             selectedFund = fund; 
-            renderFundList(); 
+            updateFundListActiveOnly(fund?.code);
             updateMainDisplay(fund); 
-            loadHoldingsAndSectors(fund);
-            fetchHistoryData(fund.code, currentTimeRange !== 'realtime');
+            refreshLock = refreshLock.then(async () => {
+                try {
+                    await fetchFundData(fund, { suppressRender: true });
+                    try { await fetchBaiduNewestForFund(fund); } catch (e) { }
+
+                    try { await loadHoldingsAndSectors(fund, { silent: true }); } catch (e) { }
+                    try { await fetchHistoryData(fund.code, currentTimeRange !== 'realtime'); } catch (e) { }
+
+                    saveFunds();
+                    renderFundList();
+                    updateMainDisplay(fund);
+                    if (currentTimeRange === 'realtime') updateRealtimeChart();
+                } catch (e) {
+                }
+            });
             if (currentTimeRange === 'realtime') { updateRealtimeChart(); startRealtimeUpdate(); }
             if (window.innerWidth <= 768) { closeMobileSidebar(); }
             
@@ -4714,55 +4783,74 @@
         }
 
         // 一键刷新所有基金数据
-        async function refreshAllFunds() {
+        async function refreshAllFunds(options = {}) {
+            const fromInit = !!options.fromInit;
+            const skipHistory = !!options.skipHistory;
             const btn = document.getElementById('overviewRefreshBtn');
-            if (!btn) return;
-            if (typeof btn.blur === 'function') btn.blur();
-            
-            // 防止重复点击
-            if (btn.disabled) return;
-            
-            btn.classList.add('refreshing');
-            btn.disabled = true;
+            if (!fromInit) {
+                if (!btn) return;
+                if (typeof btn.blur === 'function') btn.blur();
+                if (btn.disabled) return;
+                btn.classList.add('refreshing');
+                btn.disabled = true;
+            }
 
             try {
-                const status = getMarketStatus();
-                const shNow0 = getShanghaiTimeParts();
-                const todayStr0 = `${shNow0.year}-${String(shNow0.month).padStart(2,'0')}-${String(shNow0.day).padStart(2,'0')}`;
-                // 顺序刷新所有基金（避免并发请求过多）
-                for (const fund of funds) {
-                    await fetchFundData(fund, { suppressRender: true });
-                    await ensureHistoryForPositionIfNeeded(fund);
+                const status = skipHistory ? null : getMarketStatus();
+                const shNow0 = skipHistory ? null : getShanghaiTimeParts();
+                const todayStr0 = skipHistory ? '' : `${shNow0.year}-${String(shNow0.month).padStart(2,'0')}-${String(shNow0.day).padStart(2,'0')}`;
 
-                    const navDateStr0 = getDateStr(fund.navDate);
-                    const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
-                    if (needPromoteOfficialNav0) {
-                        try {
-                            delete historyCache[fund.code];
-                            await fetchHistoryData(fund.code, false);
-                            const off = getOfficialDayGrowthFromHistoryWithDate(fund);
-                            if (Number.isFinite(off.chg) && off.date) {
-                                fund._officialDayGrowth = off.chg;
-                                fund._officialDayGrowthDate = off.date;
+                const concurrency = Math.max(1, Number(options.concurrency) || 10);
+                const list = Array.isArray(funds) ? funds.slice() : [];
+                let cursor = 0;
+
+                const worker = async () => {
+                    while (cursor < list.length) {
+                        const idx = cursor++;
+                        const fund = list[idx];
+                        if (!fund) continue;
+
+                        await refreshOneFundFull(fund, {
+                            suppressRender: true,
+                            includeHoldings: false,
+                            newestOptions: { timeoutDirectMs: 8000, timeoutProxyMs: 9000 },
+                            refreshHistoryForDayGrowth: !skipHistory,
+                            skipPositionHistory: skipHistory
+                        });
+
+                        if (skipHistory) continue;
+
+                        const navDateStr0 = getDateStr(fund.navDate);
+                        const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
+                        if (needPromoteOfficialNav0) {
+                            try {
+                                const off = getOfficialDayGrowthFromHistoryWithDate(fund);
+                                if (Number.isFinite(off.chg) && off.date) {
+                                    fund._officialDayGrowth = off.chg;
+                                    fund._officialDayGrowthDate = off.date;
+                                }
+                            } catch (e) {
+                                // ignore
                             }
-                        } catch (e) {
-                            // ignore
                         }
                     }
-                }
+                };
 
-                // 刷新完成后更新UI
+                await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, () => worker()));
+
                 saveFunds();
                 renderFundList();
                 renderFundOverview();
-                showToast('所有基金数据已刷新');
+                if (!fromInit) showToast('所有基金数据已刷新');
             } catch (error) {
                 console.error('刷新失败:', error);
-                showToast('刷新失败，请稍后重试', 'error');
+                if (!fromInit) showToast('刷新失败，请稍后重试', 'error');
             } finally {
-                btn.classList.remove('refreshing');
-                btn.disabled = false;
-                if (typeof btn.blur === 'function') btn.blur();
+                if (!fromInit) {
+                    btn.classList.remove('refreshing');
+                    btn.disabled = false;
+                    if (typeof btn.blur === 'function') btn.blur();
+                }
             }
         }
 
@@ -4838,6 +4926,7 @@
             const tbody = document.getElementById('holdingsTableBody');
             const tags = document.getElementById('sectorTags');
             const status0 = getMarketStatus();
+            const blockBaidu0 = !!(status0 && (status0.canRealtimeUpdate || status0.reason === '午间休市'));
 
             // updateOnly: 只更新涨跌幅，不要重绘 DOM（避免闪跳）
             if (options.updateOnly) {
@@ -4856,123 +4945,79 @@
             //   Result[0].DisplayData.resultData.tplData.result.content.tabs[0 (持仓tab)]
             //     .content.heavyStock.body[]  → TOP 10 持仓股票
             //     .content.industryPositon.list[] → 行业板块占比
-            const baiduTargetUrl = `https://gushitong.baidu.com/opendata?resource_id=5803&query=${fund.code}&new_need_di=1&source=qieman`;
-            const baiduProxyOff = (localStorage.getItem('BAIDU_PROXY_OFF') || '') === '1';
-            const baiduCorsProxy = ((localStorage.getItem('BAIDU_CORS_PROXY') || '').trim() || 'https://api.allorigins.win/get?url=');
-            const baiduAllowDirect = (localStorage.getItem('BAIDU_DIRECT') || '') === '1';
-
-            async function fetchBaiduViaProxy(targetUrl, proxyPrefix) {
-                const proxyUrl = `${proxyPrefix}${encodeURIComponent(targetUrl)}`;
-                const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-                if (!res.ok) throw new Error(`proxy http ${res.status}`);
-                let payload;
-                try {
-                    payload = await res.json();
-                } catch {
-                    const text = await res.text();
-                    payload = JSON.parse(text);
-                }
-                const raw = payload && typeof payload === 'object' && typeof payload.contents === 'string'
-                    ? payload.contents
-                    : payload;
-                if (typeof raw === 'string') return JSON.parse(raw);
-                return raw;
-            }
-
-            const baiduSources = [];
-            // 直连方案：若百度接口支持 JSONP（cb/callback），可绕过 CORS 且更快
-            // 注意：如果接口不支持 JSONP，这里会很快超时并自动回退到代理/东财备用源
-            baiduSources.push({
-                name: 'gushitong_jsonp',
-                fetch: async () => {
-                    try {
-                        return await fetchJsonp(baiduTargetUrl, 'cb', 2500);
-                    } catch {
-                        return await fetchJsonp(baiduTargetUrl, 'callback', 2500);
-                    }
-                }
-            });
-            if (!baiduProxyOff && baiduCorsProxy) {
-                baiduSources.push({
-                    name: 'gushitong_proxy',
-                    fetch: async () => await fetchBaiduViaProxy(baiduTargetUrl, baiduCorsProxy)
-                });
-            }
-            if (baiduAllowDirect) {
-                baiduSources.push({
-                    name: 'gushitong_direct',
-                    fetch: async () => {
-                        const res = await fetch(baiduTargetUrl, { signal: AbortSignal.timeout(10000) });
-                        return await res.json();
-                    }
-                });
+            let baiduSources = [];
+            if (!blockBaidu0) {
+                const baiduTargetUrl = `https://gushitong.baidu.com/opendata?resource_id=5803&query=${fund.code}&new_need_di=1&source=qieman`;
+                baiduSources = buildGushitongSources(baiduTargetUrl, { timeoutProxyMs: 12000, timeoutDirectMs: 10000 });
             }
 
             let baiduData = null; // 解析后的结构化数据: { holdings: [...], sectors: [...] }
             const noStockHoldingsByType = isLikelyNoStockHoldingsFund(fund);
 
-            for (const source of baiduSources) {
-                try {
-                    console.log(`🔄 [持仓-${source.name}] 尝试获取...`);
-                    const json = await runWithSourceStat(`holdings_${source.name}`, async () => await source.fetch());
-
-                    // 百度 newest（当日官方日涨跌幅/净值）优先提取，供右侧“日涨跌幅”即时展示
+            if (!blockBaidu0) {
+                for (const source of baiduSources) {
                     try {
-                        const newest = extractBaiduNewestDayGrowth(json);
-                        if (newest && newest.dateStr) {
-                            if (Number.isFinite(newest.chg)) fund._baiduNewestDayGrowth = newest.chg;
-                            if (Number.isFinite(newest.nav)) fund._baiduNewestNav = newest.nav;
-                            fund._baiduNewestDayGrowthDate = newest.dateStr;
+                        console.log(`🔄 [持仓-${source.name}] 尝试获取...`);
+                        const json = await runWithSourceStat(`holdings_${source.name}`, async () => await source.fetch());
+
+                        // 百度 newest（当日官方日涨跌幅/净值）优先提取，供右侧“日涨跌幅”即时展示
+                        try {
+                            const newest = extractBaiduNewestDayGrowth(json);
+                            if (newest && newest.dateStr) {
+                                if (Number.isFinite(newest.chg)) fund._baiduNewestDayGrowth = newest.chg;
+                                if (Number.isFinite(newest.nav)) fund._baiduNewestNav = newest.nav;
+                                fund._baiduNewestDayGrowthDate = newest.dateStr;
+                            }
+                        } catch {
+                            // ignore
                         }
-                    } catch {
-                        // ignore
-                    }
 
-                    // 深层解析路径
-                    const result = json?.Result?.[0];
-                    const tplData = result?.DisplayData?.resultData?.tplData?.result;
-                    const tabs = tplData?.content?.tabs;
+                        // 深层解析路径
+                        const result = json?.Result?.[0];
+                        const tplData = result?.DisplayData?.resultData?.tplData?.result;
+                        const tabs = tplData?.content?.tabs;
 
-                    // tabs[0] 是 "持仓" tab (type: "position")
-                    const positionTab = tabs?.find(t => t.type === 'position') || tabs?.[0];
-                    const posContent = positionTab?.content;
+                        // tabs[0] 是 "持仓" tab (type: "position")
+                        const positionTab = tabs?.find(t => t.type === 'position') || tabs?.[0];
+                        const posContent = positionTab?.content;
 
-                    // heavyStock.body → TOP 10 股票
-                    const heavyStockBody = posContent?.heavyStock?.body;
-                    // industryPositon.list → 行业板块
-                    const industryList = posContent?.industryPositon?.list;
-                    // heavyStock 更新日期
-                    const holdingDate = posContent?.heavyStock?.titleHeader?.[1] || '';
+                        // heavyStock.body → TOP 10 股票
+                        const heavyStockBody = posContent?.heavyStock?.body;
+                        // industryPositon.list → 行业板块
+                        const industryList = posContent?.industryPositon?.list;
+                        // heavyStock 更新日期
+                        const holdingDate = posContent?.heavyStock?.titleHeader?.[1] || '';
 
-                    if (!heavyStockBody || heavyStockBody.length === 0) {
-                        if (noStockHoldingsByType) {
-                            baiduData = { holdings: [], sectors: [], holdingDate: '' };
-                            console.log(`ℹ️ [持仓-${source.name}] ${fund.code} 判定为无股票持仓基金，跳过TOP10持仓渲染`);
-                            break;
+                        if (!heavyStockBody || heavyStockBody.length === 0) {
+                            if (noStockHoldingsByType) {
+                                baiduData = { holdings: [], sectors: [], holdingDate: '' };
+                                console.log(`ℹ️ [持仓-${source.name}] ${fund.code} 判定为无股票持仓基金，跳过TOP10持仓渲染`);
+                                break;
+                            }
+                            throw new Error('heavyStock.body 为空');
                         }
-                        throw new Error('heavyStock.body 为空');
+
+                        // 映射持仓数据
+                        const holdings = heavyStockBody.map(item => ({
+                            name: item.name,                          // 股票名称
+                            code: getSecId(item.code),                // 股票代码（统一为6位数字）
+                            ratio: parseFloat(item.positionProportion?.replace('%', '')) || 0  // 占净值比例
+                        }));
+
+                        // 映射行业板块数据
+                        const sectors = (industryList || []).map(item => ({
+                            name: item.text,                          // 行业名称
+                            weight: parseFloat(item.value?.replace('%', '')) || 0  // 占比
+                        }));
+
+                        baiduData = { holdings, sectors, holdingDate };
+                        console.log(`✅ [持仓-${source.name}] 成功! 持仓${holdings.length}条, 板块${sectors.length}条, 日期: ${holdingDate}`);
+                        break;
+
+                    } catch (error) {
+                        console.warn(`❌ [持仓-${source.name}] 失败:`, error.message);
+                        continue;
                     }
-
-                    // 映射持仓数据
-                    const holdings = heavyStockBody.map(item => ({
-                        name: item.name,                          // 股票名称
-                        code: item.code,                          // 股票代码
-                        ratio: parseFloat(item.positionProportion?.replace('%', '')) || 0  // 占净值比例
-                    }));
-
-                    // 映射行业板块数据
-                    const sectors = (industryList || []).map(item => ({
-                        name: item.text,                          // 行业名称
-                        weight: parseFloat(item.value?.replace('%', '')) || 0  // 占比
-                    }));
-
-                    baiduData = { holdings, sectors, holdingDate };
-                    console.log(`✅ [持仓-${source.name}] 成功! 持仓${holdings.length}条, 板块${sectors.length}条, 日期: ${holdingDate}`);
-                    break;
-
-                } catch (error) {
-                    console.warn(`❌ [持仓-${source.name}] 失败:`, error.message);
-                    continue;
                 }
             }
 
@@ -5005,7 +5050,7 @@
                         holdings = rows.map(tr => {
                             const tds = Array.from(tr.querySelectorAll('td'));
                             if (tds.length === 0) return null;
-                            const code = (tds[idxCode]?.textContent || '').trim();
+                            const code = getSecId((tds[idxCode]?.textContent || '').trim());
                             const name = (tds[idxName]?.textContent || '').trim();
                             const ratioText = (tds[idxRatio]?.textContent || '').trim();
                             let ratio = 0;
@@ -5059,41 +5104,37 @@
             }
 
             // --- 获取股票实时行情（涨跌幅）————————————————————————————
-            const quoteSources = [
-                (secid) => `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f2,f3,f4,f43,f60,f100&ut=fa5fd1943c7b386f172d6893dbfba10b&_=${Date.now()}`
-            ];
-
             console.log('📈 开始获取股票行情...');
-            const quotes = await Promise.all(baiduData.holdings.map(async h => {
-                const secid = getEastmoneySecId(h.code);
-                for (const getUrl of quoteSources) {
-                    try {
-                        let qjson;
-                        try {
-                            qjson = await runWithSourceStat('quote_stock_get_jsonp', async () => await fetchJsonp(getUrl(secid), 'cb', 8000));
-                        } catch {
-                            qjson = await runWithSourceStat('quote_stock_get_jsonp_callback', async () => await fetchJsonp(getUrl(secid), 'callback', 8000));
-                        }
-                        if (qjson?.data) {
-                            const d = qjson.data;
-                            const last = Number(d.f43 ?? d.f2);
-                            const prevClose = Number(d.f60);
-                            const chgRaw = d.f3;
-                            let chg = (typeof chgRaw === 'number') ? chgRaw : Number(chgRaw);
-                            if (!Number.isFinite(chg)) {
-                                if (Number.isFinite(last) && Number.isFinite(prevClose) && prevClose !== 0) {
-                                    chg = ((last - prevClose) / prevClose) * 100;
-                                } else {
-                                    chg = 0;
-                                }
-                            }
-                            chg = normalizeStockChg(chg, status0);
-                            return { ...h, chg, price: Number.isFinite(last) ? last : 0, industry: d.f100 || '其他' };
-                        }
-                    } catch (err) { continue; }
-                }
-                return { ...h, chg: 0, price: 0, industry: '其他' };
-            }));
+            const secids = baiduData.holdings.map(h => getEastmoneySecId(h.code)).filter(Boolean).join(',');
+            const quoteUrl = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&secids=${secids}&fields=f12,f3,f100&ut=fa5fd1943c7b386f172d6893dbfba10b&_=${Date.now()}`;
+
+            let qjson;
+            try {
+                qjson = await runWithSourceStat('quote_ulist_np_get_jsonp', async () => await fetchJsonp(quoteUrl, 'cb', 8000));
+            } catch {
+                qjson = await runWithSourceStat('quote_ulist_np_get_jsonp_callback', async () => await fetchJsonp(quoteUrl, 'callback', 8000));
+            }
+
+            const diff = qjson?.data?.diff;
+            const chgMap = {};
+            const indMap = {};
+            if (Array.isArray(diff)) {
+                diff.forEach(item => {
+                    const code = (item?.f12 || '').toString();
+                    const chg = Number(item?.f3);
+                    const ind = (item?.f100 || '').toString();
+                    if (code) {
+                        if (Number.isFinite(chg)) chgMap[code] = chg;
+                        if (ind) indMap[code] = ind;
+                    }
+                });
+            }
+
+            const quotes = baiduData.holdings.map(h => {
+                const chg0 = Number.isFinite(chgMap[h.code]) ? chgMap[h.code] : 0;
+                const chg = normalizeStockChg(chg0, status0);
+                return { ...h, chg, price: 0, industry: indMap[h.code] || '其他' };
+            });
 
             // 统一变量：TOP10 权重/前十持仓占比合计用同一个 top10Weight，避免两处各算各的导致错乱
             const top10Weight = quotes.reduce((sum, h) => sum + (parseFloat(h.ratio) || 0), 0);
@@ -5784,9 +5825,11 @@
                 if (i > 0) {
                     const prevDate = tsToDateStr(all[i - 1].x);
                     let sharesPrev = 0;
-                    const canCalc = !!fund && (!firstEffBuyDate || prevDate >= firstEffBuyDate);
+                    const canCalc = !!fund;
                     if (canCalc) {
-                        sharesPrev = calcSharesAsOfDate(code, fund, prevDate);
+                        if (!firstEffBuyDate || prevDate >= firstEffBuyDate) {
+                            sharesPrev = calcSharesAsOfDate(code, fund, prevDate);
+                        }
 
                         // 兜底1：若无卖出记录，直接用买入份额求和（避免因边界导致 calcSharesAsOfDate 算出 NaN/0）
                         if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
@@ -5894,12 +5937,118 @@
         function stopRealtimeUpdate() { /* unified loop handles stop */ }
         function startAutoUpdate() { startUnifiedRefreshLoop(); }
 
+        let officialRefreshCursor = 0;
+        let lastOfficialRefreshAt = 0;
+        let _autoResetDate = '';
+
+        function getShanghaiTodayStr() {
+            const sh = getShanghaiTimeParts();
+            return `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+        }
+
+        function isAfter915() {
+            const sh = getShanghaiTimeParts();
+            const mins = sh.hour * 60 + sh.minute;
+            return mins >= (9 * 60 + 15);
+        }
+
+        function shouldEnableOfficialPolling(status) {
+            // 仅在盘后阶段启用（交易中/午休/盘后补全不启用）
+            return !!(status && status.canRealtimeUpdate === false && status.reason === '盘后');
+        }
+
+        function fundHasClose1500(fund) {
+            const sh = getShanghaiTimeParts();
+            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+            const t = (fund?.estimatedTime || '').toString();
+            const m = t.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})/);
+            if (m && m[1] === todayStr && `${m[2]}:${m[3]}` === '15:00') return true;
+            const rh = fund?.realtimeHistory;
+            if (Array.isArray(rh) && rh.length >= 242) {
+                const v = rh[241];
+                if (Number.isFinite(v) && v > 0) return true;
+            }
+            return false;
+        }
+
+        function fundHasLatestOfficialToday(fund) {
+            const todayStr = getShanghaiTodayStr();
+            const d1 = (fund?._baiduNewestDayGrowthDate || '').toString();
+            if (d1 && d1 === todayStr && Number.isFinite(Number(fund?._baiduNewestDayGrowth))) return true;
+            const d2 = (fund?._officialDayGrowthDate || '').toString();
+            if (d2 && d2 === todayStr && Number.isFinite(Number(fund?._officialDayGrowth))) return true;
+            const navDateStr = getDateStr(fund?.navDate);
+            if (navDateStr && navDateStr === todayStr) return true;
+            return false;
+        }
+
+        function isFundFrozenForToday(fund) {
+            const todayStr = getShanghaiTodayStr();
+            return (fund && String(fund._autoFrozenDate || '') === todayStr);
+        }
+
+        function freezeFundForTodayIfOfficialReady(fund) {
+            if (!fund) return;
+            if (fundHasLatestOfficialToday(fund)) {
+                fund._autoFrozenDate = getShanghaiTodayStr();
+            }
+        }
+
+        function resetAutoFreezeIfNeeded() {
+            const todayStr = getShanghaiTodayStr();
+            if (_autoResetDate === todayStr) return;
+            if (!isAfter915()) return;
+            _autoResetDate = todayStr;
+            if (Array.isArray(funds)) {
+                for (const f of funds) {
+                    if (f) delete f._autoFrozenDate;
+                }
+            }
+            officialRefreshCursor = 0;
+            lastOfficialRefreshAt = 0;
+        }
+
         function startUnifiedRefreshLoop() {
             if (refreshInterval) return;
             refreshInterval = setInterval(() => {
                 refreshLock = refreshLock.then(async () => {
                     const status = getMarketStatus();
                     const now = Date.now();
+
+                    resetAutoFreezeIfNeeded();
+
+                    const enableOfficialPolling = shouldEnableOfficialPolling(status);
+                    let needEstimateAfterClose = false;
+                    if (status && status.canRealtimeUpdate === false && status.reason === '盘后' && Array.isArray(funds) && funds.length > 0) {
+                        for (const f of funds) {
+                            if (!f) continue;
+                            if (isFundFrozenForToday(f)) continue;
+                            if (!fundHasClose1500(f)) { needEstimateAfterClose = true; break; }
+                        }
+                    }
+                    const allowAutoEstimate = !!(status && status.canRealtimeUpdate) || (status && status.reason === '盘前' && isAfter915()) || needEstimateAfterClose;
+
+                    function hasAllCnIndicesClosedPoint15() {
+                        for (const [k, cfg] of Object.entries(MARKET_INDICES)) {
+                            if (!cfg || cfg.type !== 'cn') continue;
+                            const cached = indexTrendCache[k];
+                            const times = cached?.times;
+                            if (!Array.isArray(times) || times.length === 0) return false;
+                            const lastT = String(times[times.length - 1] || '');
+                            if (lastT !== '15:00') return false;
+                        }
+                        return true;
+                    }
+
+                    function canRetryIndicesAfterClose(st) {
+                        if (!st || st.canRealtimeUpdate) return false;
+                        const sh = getShanghaiTimeParts();
+                        const mins = sh.hour * 60 + sh.minute;
+                        // 仅允许 15:05-16:30 期间补一次（或多次低频）拿到 15:00 收盘点
+                        if (mins < (15 * 60 + 5)) return false;
+                        if (mins > (16 * 60 + 30)) return false;
+                        return !hasAllCnIndicesClosedPoint15();
+                    }
 
 
                     const minFundInterval = 2900;
@@ -5908,15 +6057,22 @@
                     // 全局限流：每秒最多一次“网络任务”，用轮询调度保证各模块都能更新
                     // tick%4:
                     //   0/1: 轮询刷新一只基金估值（避免多基金同秒多请求）
-                    //   2:   刷新选中基金持仓涨跌（批量接口一次请求）
+                    //   2:   交易中刷新选中基金持仓涨跌；盘后用作官方数据轮询
                     //   3:   刷新指数
                     refreshTick = (refreshTick + 1) % 4;
 
                     if ((refreshTick === 0 || refreshTick === 1) && funds.length > 0 && now - lastFundRefreshAt >= minFundInterval) {
+                        if (!allowAutoEstimate) return;
                         lastFundRefreshAt = now;
                         fundRefreshCursor = fundRefreshCursor % funds.length;
                         const f = funds[fundRefreshCursor];
                         fundRefreshCursor++;
+
+                        // 盘后：默认停止估值轮询；仅在未拿到15:00收盘数据时补齐
+                        if (status && status.canRealtimeUpdate === false && status.reason === '盘后') {
+                            if (!f || fundHasClose1500(f)) return;
+                        }
+                        if (f && isFundFrozenForToday(f)) return;
                         await fetchFundData(f, { suppressRender: true });
                         renderFundList();
                         const mainContent = document.querySelector('.main-content');
@@ -5930,30 +6086,69 @@
                         return;
                     }
 
-                    if (refreshTick === 2 && selectedFund) {
-                        // 交易时每秒仅更新“持仓涨跌幅”，不重绘持仓/板块（批量一次请求）
-                        await loadHoldingsAndSectors(selectedFund, { updateOnly: true });
-                        updateMainDisplay(selectedFund);
-                        clearTimeout(renderFundListTimer);
-                        renderFundListTimer = setTimeout(() => renderFundList(), 50);
-                        const mainContent = document.querySelector('.main-content');
-                        if (mainContent && mainContent.classList.contains('overview-mode')) {
-                            setTimeout(() => {
-                                const main2 = document.querySelector('.main-content');
-                                if (main2 && main2.classList.contains('overview-mode')) renderFundOverview();
-                            }, 60);
+                    if (refreshTick === 2) {
+                        if (enableOfficialPolling) {
+                            const minOfficialInterval = 6000;
+                            if (!Array.isArray(funds) || funds.length === 0) return;
+                            if (now - lastOfficialRefreshAt < minOfficialInterval) return;
+                            lastOfficialRefreshAt = now;
+                            officialRefreshCursor = officialRefreshCursor % funds.length;
+                            const f = funds[officialRefreshCursor];
+                            officialRefreshCursor++;
+                            if (!f) return;
+                            if (isFundFrozenForToday(f)) return;
+
+                            try {
+                                await fetchBaiduNewestForFund(f, { timeoutDirectMs: 8000, timeoutProxyMs: 9000 });
+                            } catch (e) {
+                            }
+                            freezeFundForTodayIfOfficialReady(f);
+                            saveFunds();
+                            clearTimeout(renderFundListTimer);
+                            renderFundListTimer = setTimeout(() => {
+                                renderFundList();
+                                const main0 = document.querySelector('.main-content');
+                                if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
+                                if (selectedFund?.code === f.code) updateMainDisplay(selectedFund);
+                            }, 50);
+                            return;
                         }
-                        return;
+
+                        // 非盘后官方轮询时：仅在交易中更新“持仓涨跌幅”
+                        if (selectedFund && status && status.canRealtimeUpdate) {
+                            if (isFundFrozenForToday(selectedFund)) return;
+                            await loadHoldingsAndSectors(selectedFund, { updateOnly: true });
+                            updateMainDisplay(selectedFund);
+                            clearTimeout(renderFundListTimer);
+                            renderFundListTimer = setTimeout(() => renderFundList(), 50);
+                            const mainContent = document.querySelector('.main-content');
+                            if (mainContent && mainContent.classList.contains('overview-mode')) {
+                                setTimeout(() => {
+                                    const main2 = document.querySelector('.main-content');
+                                    if (main2 && main2.classList.contains('overview-mode')) renderFundOverview();
+                                }, 60);
+                            }
+                            return;
+                        }
                     }
 
-                    if (refreshTick === 3 && now - lastIndicesRefreshAt >= minIndicesInterval) {
-                        lastIndicesRefreshAt = now;
-                        await fetchMarketIndices();
-                        return;
+                    if (refreshTick === 3) {
+                        const allowIndices = !!(status && status.canRealtimeUpdate);
+                        const allowRetryAfterClose = canRetryIndicesAfterClose(status);
+                        // 休市：默认不周期性刷新指数（页面加载时已 fetchMarketIndices 一次）
+                        if (!allowIndices && !allowRetryAfterClose) return;
+
+                        const interval = allowIndices ? minIndicesInterval : 30000;
+                        if (now - lastIndicesRefreshAt >= interval) {
+                            lastIndicesRefreshAt = now;
+                            await fetchMarketIndices();
+                            return;
+                        }
                     }
 
                     // 结构性持仓/板块：维持低频（不占用每秒预算，只有轮到且超时才刷新）
-                    if (selectedFund && now - lastHoldingsRefreshAt >= 30000) {
+                    if (selectedFund && status && status.canRealtimeUpdate && now - lastHoldingsRefreshAt >= 30000) {
+                        if (isFundFrozenForToday(selectedFund)) return;
                         lastHoldingsRefreshAt = now;
                         await loadHoldingsAndSectors(selectedFund, { silent: true });
                         return;
