@@ -2559,6 +2559,11 @@
                     await fetchHistoryData(fund.code, false);
                 } catch (e) {
                 }
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent && mainContent.classList.contains('overview-mode')) {
+                    renderFundOverview();
+                }
+                showToast(`${fund.name || fund.code} 数据已刷新`);
             })();
         }
 
@@ -5902,7 +5907,16 @@
                     if (refreshTick === 2 && selectedFund) {
                         // 交易时每秒仅更新“持仓涨跌幅”，不重绘持仓/板块（批量一次请求）
                         await loadHoldingsAndSectors(selectedFund, { updateOnly: true });
-                        updateDayGrowthDisplay(selectedFund);
+                        updateMainDisplay(selectedFund);
+                        clearTimeout(renderFundListTimer);
+                        renderFundListTimer = setTimeout(() => renderFundList(), 50);
+                        const mainContent = document.querySelector('.main-content');
+                        if (mainContent && mainContent.classList.contains('overview-mode')) {
+                            setTimeout(() => {
+                                const main2 = document.querySelector('.main-content');
+                                if (main2 && main2.classList.contains('overview-mode')) renderFundOverview();
+                            }, 60);
+                        }
                         return;
                     }
 
