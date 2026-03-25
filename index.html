@@ -254,6 +254,8 @@
         .overview-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, var(--primary) 0%, var(--purple) 100%); transform: scaleY(0); transform-origin: top; transition: transform 0.3s; }
         .overview-card:hover { border-color: var(--primary-light); transform: translateX(4px); box-shadow: 0 8px 24px rgba(59,130,246,0.12); }
         .overview-card:hover::before { transform: scaleY(1); }
+        .overview-card.official { background: rgba(99, 102, 241, 0.06); border-color: rgba(99, 102, 241, 0.35); }
+        .overview-card.official:hover { border-color: rgba(99, 102, 241, 0.55); box-shadow: 0 10px 26px rgba(99, 102, 241, 0.14); }
         .overview-card-info { min-width: 0; }
         .overview-card-name { font-size: 1.125rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .overview-card-code { font-size: 0.8125rem; color: var(--gray-500); font-family: 'JetBrains Mono', monospace; }
@@ -4605,6 +4607,7 @@
                 const displayNav = getDisplayNav(fund);
                 const dayGrowth = getDisplayDayGrowth(fund);
                 const isPositive = dayGrowth >= 0;
+                const isOfficial0 = (fund && String(fund._dayGrowthSource || '') === 'official');
                 
                 // 格式化更新时间
                 const updateTime = fund.lastUpdateTime || '--';
@@ -4638,7 +4641,7 @@
                 }
                 
                 return `
-                    <div class="overview-card" data-code="${fund.code}">
+                    <div class="overview-card${isOfficial0 ? ' official' : ''}" data-code="${fund.code}">
                         <div class="overview-card-info">
                             <div class="overview-card-name">${fund.name || '加载中...'}</div>
                             <div class="overview-card-code">${fund.code}</div>
