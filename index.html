@@ -4529,7 +4529,7 @@
                 renderFundOverview();
             }
 
-            showToast('添加成功');
+            showToast(`已添加 ${fund.name || fund.code || code}`);
             // 新增后直接选中该基金，避免仍停留在旧基金详情导致看到旧的“更新于”
             try { selectFund(fund); } catch (e) { /* ignore */ }
             if (window.innerWidth <= 768) { closeMobileSidebar(); }
@@ -4537,10 +4537,21 @@
         
         function deleteFund(code) {
             if (!confirm('确认删除该基金？')) return;
+            const removed = funds.find(f => f.code === code) || null;
             funds = funds.filter(f => f.code !== code); saveFunds();
             if (miniCharts[code]) { miniCharts[code].dispose(); delete miniCharts[code]; }
+
+            const mainContent = document.querySelector('.main-content');
+            const inOverview = !!(mainContent && mainContent.classList.contains('overview-mode'));
+
             if (selectedFund?.code === code) selectedFund = funds[0] || null;
-            renderFundList(); if(selectedFund) selectFund(selectedFund);
+            renderFundList();
+            if (inOverview) {
+                renderFundOverview();
+            } else {
+                if (selectedFund) selectFund(selectedFund);
+            }
+            showToast(`已删除 ${removed?.name || removed?.code || code}`);
         }
 
         function selectFund(fund) {
