@@ -89,18 +89,19 @@
         .indices-refresh:hover { background: var(--gray-100); border-color: var(--gray-300); }
         
         .add-fund-section { padding: 24px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(229, 229, 229, 0.6); }
-        .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 10px; }
-        .input-field { width: 100%; padding: 12px 16px; border: 2px solid var(--gray-200); border-radius: 12px; font-size: 0.9375rem; font-family: 'JetBrains Mono', monospace; transition: all 0.25s; background: white; }
+        .input-row { display: grid; grid-template-columns: 1fr 120px; gap: 10px; margin-bottom: 10px; }
+        .input-field { width: 100%; padding: 10px 12px; border: 2px solid var(--gray-200); border-radius: 12px; font-size: 0.8125rem; font-family: 'JetBrains Mono', monospace; transition: all 0.25s; background: white; }
         .input-field:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12); transform: translateY(-1px); }
-        .btn-add { padding: 12px 24px; border: none; border-radius: 12px; font-size: 0.9375rem; font-weight: 700; cursor: pointer; transition: all 0.25s; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; white-space: nowrap; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); position: relative; overflow: hidden; }
+        .btn-add { min-width: 120px; padding: 10px 16px; border: none; border-radius: 12px; font-size: 0.8125rem; font-weight: 700; cursor: pointer; transition: all 0.25s; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; white-space: nowrap; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); position: relative; overflow: hidden; }
         .btn-add:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4); }
         .optional-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .input-small { padding: 10px 14px; font-size: 0.875rem; }
+        .input-small { padding: 8px 10px; font-size: 0.75rem; }
         .helper-text { font-size: 0.75rem; color: var(--gray-500); margin-top: 10px; display: flex; align-items: center; gap: 6px; background: var(--gray-50); padding: 8px 12px; border-radius: 8px; border-left: 3px solid var(--primary-light); }
         .fund-suggest { margin-top: 8px; border: 1.5px solid var(--gray-200); border-radius: 12px; background: white; overflow: hidden; box-shadow: 0 8px 20px rgba(0,0,0,0.06); max-height: 260px; overflow-y: auto; display: none; }
         .fund-suggest-item { padding: 10px 12px; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .fund-suggest-item:hover, .fund-suggest-item.active { background: var(--gray-50); }
         .fund-suggest-left { min-width: 0; }
+        .fund-suggest-name { font-size: 0.8125rem; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .fund-suggest-name { font-size: 0.875rem; font-weight: 700; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .fund-suggest-meta { font-size: 0.75rem; color: var(--gray-500); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .fund-suggest-code { font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem; font-weight: 800; color: var(--gray-700); background: var(--gray-100); padding: 4px 8px; border-radius: 8px; flex-shrink: 0; }
@@ -226,8 +227,8 @@
         .overview-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; }
         .overview-title { font-size: 1.75rem; font-weight: 800; color: var(--gray-900); margin-bottom: 12px; }
         .overview-subtitle { font-size: 1rem; color: var(--gray-600); }
-        .overview-refresh-btn { padding: 12px 18px; border: 1.5px solid var(--primary); background: white; border-radius: 12px; font-size: 0.875rem; font-weight: 800; color: var(--primary); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
-        .overview-refresh-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.22); }
+        .overview-refresh-btn { padding: 14px 16px; border: 1.5px solid var(--primary); background: white; border-radius: 12px; font-size: 0.875rem; font-weight: 800; color: var(--primary); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
+        .overview-refresh-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59,130,246,0.22); }
         .overview-refresh-btn:active { transform: translateY(0); }
         .overview-refresh-btn:focus { outline: none; }
         .overview-refresh-btn .refresh-icon { font-size: 1.05rem; transition: transform 0.6s; }
@@ -452,17 +453,17 @@
             .chart-header { flex-direction: column; align-items: flex-start; gap: 12px; }
             .time-tabs { width: 100%; justify-content: space-between; }
             .time-tab { padding: 8px 12px; font-size: 0.8125rem; }
-            .input-row { grid-template-columns: 1fr; }
-            .btn-add { width: 100%; }
+            .input-row { grid-template-columns: 1fr 108px; }
+            .btn-add { width: auto; min-width: 108px; }
             .source-indicator { display: none; } /* 移动端隐藏数据源指示器 */
             .market-indices { padding: 0; }
             .indices-toggle { padding: 12px 16px; }
             .indices-inner { padding: 16px; }
             .indices-content.open { max-height: calc(100vh - 220px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-            /* 移动端恢复1列 */
-            .indices-grid { grid-template-columns: 1fr; gap: 8px; }
+            /* 移动端：两列显示 */
+            .indices-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
             .index-card { padding: 10px 12px; min-height: auto; }
-            .index-card.selected { grid-column: span 1; }
+            .index-card.selected { grid-column: span 2; }
             .index-value { font-size: 1rem; }
 
             .add-fund-toggle { padding: 14px 16px; }
@@ -470,8 +471,8 @@
             .add-fund-toggle-title { font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; }
             .add-fund-inner { padding: 14px 16px 18px; }
             .add-fund-body.open { max-height: calc(100vh - 220px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-            .input-field { padding: 14px 14px; font-size: 1rem; }
-            .btn-add { padding: 12px 16px; font-size: 1rem; }
+            .input-field { padding: 10px 12px; font-size: 0.8125rem; }
+            .btn-add { padding: 10px 16px; font-size: 0.8125rem; }
             .fund-suggest-item { padding: 12px 12px; }
 
             .toast-container { top: auto; right: auto; left: 50%; bottom: 16px; transform: translateX(-50%); width: calc(100% - 24px); max-width: 420px; gap: 10px; }
