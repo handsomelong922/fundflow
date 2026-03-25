@@ -285,6 +285,8 @@
         .market-status.open { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
         .market-status.closed { background: var(--gray-50); color: var(--gray-700); border: 1px solid var(--gray-200); }
         .update-time { font-size: 0.8125rem; color: var(--gray-600); background: var(--gray-50); padding: 6px 14px; border-radius: 10px; border: 1px solid var(--gray-200); }
+        .gz-delay-badge { display: inline-flex; align-items: center; justify-content: center; height: 18px; padding: 0 6px; margin-left: 8px; border-radius: 999px; border: 1px solid rgba(139,92,246,0.22); background: rgba(139,92,246,0.10); color: #7c3aed; font-size: 0.6875rem; font-weight: 800; line-height: 18px; vertical-align: middle; user-select: none; }
+        .gz-delay-badge .icon { display: inline-flex; align-items: center; justify-content: center; height: 18px; font-size: 0.75rem; line-height: 18px; margin-right: 3px; }
         .remind-chip { font-size: 0.8125rem; color: #b45309; background: rgba(245, 158, 11, 0.10); padding: 6px 12px; border-radius: 10px; border: 1px solid rgba(245, 158, 11, 0.22); cursor: pointer; user-select: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
         .remind-chip.active { color: #047857; background: rgba(16, 185, 129, 0.10); border-color: rgba(16, 185, 129, 0.22); }
         .remind-chip.fired { color: var(--gray-700); background: var(--gray-50); border-color: var(--gray-200); }
@@ -2269,6 +2271,7 @@
 
         const sourceStats = {};
         Object.values(DATA_SOURCES).forEach(s => ensureSourceStat(s.name));
+        ensureSourceStat('holdings_top10_est');
 
         async function fetchWithFallback(code) {
             const sources = Object.values(DATA_SOURCES).sort((a, b) => {
@@ -2281,13 +2284,20 @@
             });
             
             let lastError;
+            const attemptedSources = [];
+            const failedSources = [];
             for (const source of sources) {
+                attemptedSources.push(source.name);
                 const startTime = Date.now();
                 try {
                     console.log(`🔄 [${source.name}] 尝试获取数据...`);
                     const data = await source.fetch(code);
                     const duration = Date.now() - startTime;
                     if (!data || !data.dwjz || !data.name) throw new Error('数据不完整');
+                    // 标记本次成功返回的数据源，供展示层决定估算优先级
+                    data._sourceName = source.name;
+                    data._attemptedSources = attemptedSources.slice();
+                    data._failedSources = failedSources.slice();
                     ensureSourceStat(source.name);
                     sourceStats[source.name].success++;
                     sourceStats[source.name].totalTime += duration;
@@ -2296,6 +2306,7 @@
                     return data;
                 } catch (error) {
                     const duration = Date.now() - startTime;
+                    failedSources.push(source.name);
                     ensureSourceStat(source.name);
                     sourceStats[source.name].fail++;
                     console.warn(`❌ [${source.name}] 失败: ${error.message} (${duration}ms)`);
@@ -2873,23 +2884,74 @@
             // 若已明确拿到“官方当日涨跌幅”，全局优先展示官方（避免卡片/详情与日涨跌幅卡片不一致）
             const newestDate = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
             const newestChg = Number(fund && fund._baiduNewestDayGrowth);
-            if (newestDate === todayStr && Number.isFinite(newestChg)) return newestChg;
+            if (newestDate === todayStr && Number.isFinite(newestChg)) {
+                fund._dayGrowthSource = 'official';
+                fund._estDayGrowthSource = '';
+                fund.dayGrowth = newestChg;
+                return newestChg;
+            }
+
+            // 最新时间优先：只要已产生“今日估算”（即使尚未开盘），就优先展示估算而不是上一交易日官方
+            // （官方净值未出前，估算口径更贴近“当前”）
+            const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
+            const v0 = parseFloat(fund && fund.dayGrowth);
+            // 仅当“今日官方净值已出”时，才允许沿用已缓存的 official 值；否则可能会把上一交易日官方错误压过今日估算
+            if (src0 === 'official' && navDateStr === todayStr && Number.isFinite(v0)) return v0;
+
+            // fundgz_jsonp 更准：若本轮数据源为 fundgz_jsonp 且已产出今日估算，优先使用它，避免被 holdings_top10_est 覆盖
+            const lastSrc0 = (fund && fund._lastFetchSource) ? String(fund._lastFetchSource) : '';
+            if (hasTodayEst && lastSrc0 === 'fundgz_jsonp') {
+                fund._dayGrowthSource = 'est';
+                fund._estDayGrowthSource = 'fundgz';
+                fund.dayGrowth = est;
+                return est;
+            }
+
+            // 交易中/午间休市：若已拿到持仓加权估算（更贴近“当前”），全局优先用它作为日涨跌幅
+            const cache0 = holdingsCache && holdingsCache[fund.code];
+            const cacheAge0 = cache0 ? (Date.now() - cache0.timestamp) : Infinity;
+            const useHoldingsEst0 = (status.canRealtimeUpdate || status.reason === '午间休市')
+                && cache0 && cacheAge0 < 300000 && Number.isFinite(cache0.estDayChg);
+            // 仅当本轮 fundgz_jsonp 确实“尝试过且失败”时，才启用 holdings_top10_est（严格满足：fundgz 不可用才切换）
+            const fundgzTried0 = !!(fund && fund._fundgzTriedThisFetch);
+            const fundgzFailed0 = !!(fund && fund._fundgzFailedThisFetch);
+            if (useHoldingsEst0 && lastSrc0 !== 'fundgz_jsonp' && fundgzTried0 && fundgzFailed0) {
+                ensureSourceStat('holdings_top10_est');
+                sourceStats['holdings_top10_est'].success++;
+                fund._dayGrowthSource = 'est';
+                fund._estDayGrowthSource = 'holdings';
+                fund.dayGrowth = cache0.estDayChg;
+                return cache0.estDayChg;
+            }
+
+            if (hasTodayEst) {
+                fund._dayGrowthSource = 'est';
+                fund._estDayGrowthSource = 'fundgz';
+                fund.dayGrowth = est;
+                return est;
+            }
 
             // 盘前/休市：优先使用已持久化的“最近一交易日官方涨跌幅”（避免重启后回退到估算）
             if (!status.canRealtimeUpdate) {
                 const offDate = (fund && fund._officialDayGrowthDate) ? String(fund._officialDayGrowthDate) : '';
                 const offChg = Number(fund && fund._officialDayGrowth);
-                if (offDate && Number.isFinite(offChg)) return offChg;
+                if (offDate && Number.isFinite(offChg)) {
+                    fund._dayGrowthSource = 'official';
+                    fund._estDayGrowthSource = '';
+                    fund.dayGrowth = offChg;
+                    return offChg;
+                }
             }
-
-            const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
-            const v0 = parseFloat(fund && fund.dayGrowth);
-            if (src0 === 'official' && Number.isFinite(v0)) return v0;
 
             // 夜间官方净值已更新：优先官方口径（避免继续显示“今日估算”造成误解）
             if (navDateStr === todayStr) {
                 const off0 = getOfficialDayGrowthFromHistoryWithDate(fund).chg;
-                if (Number.isFinite(off0)) return off0;
+                if (Number.isFinite(off0)) {
+                    fund._dayGrowthSource = 'official';
+                    fund._estDayGrowthSource = '';
+                    fund.dayGrowth = off0;
+                    return off0;
+                }
             }
 
             // 今日官方净值未出：优先展示“今日估算涨跌幅”（盘后点击卡片也不回退到昨天）
@@ -2904,7 +2966,12 @@
             }
             // 其他：显示官方日涨跌幅（历史净值计算）
             const off = getOfficialDayGrowthFromHistoryWithDate(fund).chg;
-            if (Number.isFinite(off)) return off;
+            if (Number.isFinite(off)) {
+                fund._dayGrowthSource = 'official';
+                fund._estDayGrowthSource = '';
+                fund.dayGrowth = off;
+                return off;
+            }
             const fallback = parseFloat(fund.dayGrowth);
             return Number.isFinite(fallback) ? fallback : 0;
         }
@@ -2996,6 +3063,11 @@
         async function fetchFundData(fund, options = {}) {
             try {
                 const data = await (fundgzQueue = fundgzQueue.then(() => fetchWithFallback(fund.code)));
+                fund._lastFetchSource = (data && data._sourceName) ? String(data._sourceName) : '';
+                const attempted0 = Array.isArray(data && data._attemptedSources) ? data._attemptedSources : [];
+                const failed0 = Array.isArray(data && data._failedSources) ? data._failedSources : [];
+                fund._fundgzTriedThisFetch = attempted0.includes('fundgz_jsonp');
+                fund._fundgzFailedThisFetch = failed0.includes('fundgz_jsonp');
                 fund.name = data.name;
                 // 防回退：如果接口返回的官方净值日期更早（常见于夜间/跨日缓存），不要覆盖本地已拿到的更新日期净值
                 const incomingNavDateStr0 = getDateStr(data.jzrq);
@@ -3047,7 +3119,6 @@
                 
                 if (acceptGz && shouldAcceptEstimate) {
                     fund._fundgzDayGrowth = data.gszzl;
-                    // 默认先用 fundgz；若后续有持仓估算，会在 updateDayGrowthDisplay 中覆盖
                     fund.dayGrowth = data.gszzl;
                     fund.estimatedNav = data.gsz;
                     fund.estimatedTime = data.gztime;
@@ -3488,8 +3559,10 @@
                 if (estDateStr && estDateStr !== todayStr2) useDelay = false;
             }
             const delayMin = useDelay ? getGzDelayMinutes(estTimeForDelay) : null;
-            const delayText = (useDelay && Number.isFinite(delayMin) && delayMin >= 2) ? `（延迟${delayMin}分钟）` : '';
-            document.getElementById('updateTime').textContent = '更新于 ' + showUpdateTime + delayText;
+            const delayBadge = (useDelay && Number.isFinite(delayMin) && delayMin >= 2)
+                ? ` <span class="gz-delay-badge" title="估值延迟${delayMin}分钟"><span class="icon">⏱</span>${delayMin}min</span>`
+                : '';
+            document.getElementById('updateTime').innerHTML = '更新于 ' + showUpdateTime + delayBadge;
             updateReminderBadge();
             updateLastFiredReminderHint();
             rescheduleReminder();
@@ -3886,93 +3959,39 @@
             if (labelEl) {
                 labelEl.textContent = '日涨跌幅';
             }
-            
-            const status = getMarketStatus();
-            const cache = holdingsCache[fund.code];
 
-            const sh = getShanghaiTimeParts();
-            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
-            const navDateStr = getDateStr(fund.navDate);
-            const estDateStr = getDateStr(fund.estimatedTime);
-            const fundgzEst = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
-            const hasFundgzToday = (estDateStr === todayStr) && Number.isFinite(fundgzEst);
-
-            // 百度 gushitong 已给出"当日官方日涨跌幅(newest)"：优先展示（比历史净值更快）
-            const baiduNewestDate = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
-            const baiduNewestChg = Number(fund && fund._baiduNewestDayGrowth);
-            if (baiduNewestDate === todayStr && Number.isFinite(baiduNewestChg)) {
-                fund.dayGrowth = baiduNewestChg;
-                fund._dayGrowthSource = 'official';
-                el.innerHTML = (baiduNewestChg >= 0 ? '+' : '') + baiduNewestChg.toFixed(2) + '%';
-                el.className = `stat-value ${baiduNewestChg >= 0 ? 'positive' : 'negative'}`;
-                if (chgEl) {
-                    chgEl.innerHTML = `当日涨幅 ${todayStr.slice(5)} <span class="day-growth-source official">官方</span>`;
-                    chgEl.style.fontSize = '';
-                }
-                return;
+            const chgNum = getDisplayDayGrowth(fund);
+            if (Number.isFinite(chgNum)) {
+                el.innerHTML = (chgNum >= 0 ? '+' : '') + chgNum.toFixed(2) + '%';
+                el.className = `stat-value ${chgNum >= 0 ? 'positive' : 'negative'}`;
+            } else {
+                el.innerHTML = '--';
+                el.className = 'stat-value';
             }
 
-            // 今日已出官方净值：优先官方涨跌幅（历史净值差分）
-            if (navDateStr === todayStr) {
-                const off = getOfficialDayGrowthFromHistoryWithDate(fund);
-                if (Number.isFinite(off.chg)) {
-                    fund.dayGrowth = off.chg;
-                    fund._dayGrowthSource = 'official';
-                    el.innerHTML = (off.chg >= 0 ? '+' : '') + off.chg.toFixed(2) + '%';
-                    el.className = `stat-value ${off.chg >= 0 ? 'positive' : 'negative'}`;
-                    if (chgEl) {
-                        const offDate = todayStr ? todayStr.slice(5) : '';
-                        chgEl.innerHTML = `当日涨幅${offDate ? ' ' + offDate + ' 15:00' : ''} <span class="day-growth-source official">官方</span>`;
-                        chgEl.style.fontSize = '';
-                    }
-                    return;
-                }
-            }
-
-            // 使用估算条件:
-            //   市场正在交易 或 午间休市（上午已有数据）
-            //   且 holdingsCache 中有新鲜数据（< 5分钟）
-            const cacheAge = cache ? (Date.now() - cache.timestamp) : Infinity;
-            const useHoldingsEstimation = (status.canRealtimeUpdate || status.reason === '午间休市') 
-                                          && cache 
-                                          && cacheAge < 300000;
-            const useEstimation = useHoldingsEstimation || (navDateStr !== todayStr && hasFundgzToday);
-
-            if (useEstimation) {
-                if (useHoldingsEstimation) {
-                    const est = cache.estDayChg;
-                    if (Number.isFinite(est)) fund.dayGrowth = est;
-                    fund._dayGrowthSource = 'est';
-                    el.innerHTML = (est >= 0 ? '+' : '') + est.toFixed(2) + '%';
-                    el.className = `stat-value ${est >= 0 ? 'positive' : 'negative'}`;
-                    if (chgEl) {
-                        chgEl.innerHTML = `TOP10权重 ${cache.top10Weight.toFixed(2)}% <span class="day-growth-source est">估算</span>`;
-                        chgEl.style.fontSize = '';
-                    }
-                } else {
-                    const est = fundgzEst;
-                    if (Number.isFinite(est)) fund.dayGrowth = est;
-                    fund._dayGrowthSource = 'est';
-                    el.innerHTML = (est >= 0 ? '+' : '') + est.toFixed(2) + '%';
-                    el.className = `stat-value ${est >= 0 ? 'positive' : 'negative'}`;
-                    if (chgEl) {
+            if (chgEl) {
+                const src = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
+                if (src === 'est') {
+                    const estSrc = (fund && fund._estDayGrowthSource) ? String(fund._estDayGrowthSource) : '';
+                    if (estSrc === 'holdings') {
+                        const cache = holdingsCache && holdingsCache[fund.code];
+                        const w = Number(cache && cache.top10Weight);
+                        const wText = Number.isFinite(w) ? w.toFixed(2) : '--';
+                        chgEl.innerHTML = `TOP10权重 ${wText}% <span class="day-growth-source est">估算</span>`;
+                    } else {
                         const t = (fund.estimatedTime && typeof fund.estimatedTime === 'string') ? (fund.estimatedTime.match(/\b\d{1,2}:\d{2}\b/)?.[0] || '') : '';
                         chgEl.innerHTML = `今日估算${t ? ' ' + t : ''} <span class="day-growth-source est">估算</span>`;
-                        chgEl.style.fontSize = '';
                     }
-                }
-            } else {
-                // ── 未开盘 / 缓存过期: 显示官方日涨跌幅（历史净值口径） ──
-                const off = getOfficialDayGrowthFromHistoryWithDate(fund);
-                if (Number.isFinite(off.chg)) fund.dayGrowth = off.chg;
-                fund._dayGrowthSource = Number.isFinite(off.chg) ? 'official' : '';
-                el.innerHTML = !isNaN(off.chg) ? (off.chg >= 0 ? '+' : '') + off.chg.toFixed(2) + '%' : '--';
-                el.className = `stat-value ${!isNaN(off.chg) && off.chg >= 0 ? 'positive' : 'negative'}`;
-                if (chgEl) {
+                    chgEl.style.fontSize = '';
+                } else if (src === 'official') {
+                    const off = getOfficialDayGrowthFromHistoryWithDate(fund);
                     const offDate = off.date ? off.date.slice(5) : '';
-                    chgEl.innerHTML = !isNaN(off.chg)
-                        ? `当日涨幅${offDate ? ' ' + offDate + ' 15:00' : ''} <span class="day-growth-source official">官方</span>`
-                        : '--';
+                    chgEl.innerHTML = offDate
+                        ? `当日涨幅 ${offDate} 15:00 <span class="day-growth-source official">官方</span>`
+                        : `当日涨幅 <span class="day-growth-source official">官方</span>`;
+                    chgEl.style.fontSize = '';
+                } else {
+                    chgEl.innerHTML = '--';
                     chgEl.style.fontSize = '';
                 }
             }
@@ -4400,6 +4419,21 @@
             return { ok: true, dailyProfit };
         }
 
+        async function ensureHistoryForPositionIfNeeded(fund) {
+            if (!fund || !fund.code) return;
+            if (historyCache[fund.code]) return;
+            const legacy = getPositionFromLegacy(fund);
+            if (legacy && legacy.has) return;
+            const buys = getFundBuys(fund);
+            const sells = getFundSells(fund);
+            if ((!Array.isArray(buys) || buys.length === 0) && (!Array.isArray(sells) || sells.length === 0)) return;
+            try {
+                await fetchHistoryData(fund.code, false);
+            } catch (e) {
+                // ignore
+            }
+        }
+
         function updateAllPositionSummary() {
             const amountEl = document.getElementById('allPositionAmount');
             const profitEl = document.getElementById('allPositionProfit');
@@ -4624,6 +4658,12 @@
             if (mobileOverviewBtn) mobileOverviewBtn.style.display = 'none';
             
             renderFundOverview();
+
+            // 预热：概览页的“当日盈亏”依赖 historyCache 计算买入份额；后台补齐后自动重绘
+            Promise.all(funds.map(f => ensureHistoryForPositionIfNeeded(f))).then(() => {
+                const main = document.querySelector('.main-content');
+                if (main && main.classList.contains('overview-mode')) renderFundOverview();
+            });
         }
 
         // 一键刷新所有基金数据
@@ -4645,6 +4685,7 @@
                 // 顺序刷新所有基金（避免并发请求过多）
                 for (const fund of funds) {
                     await fetchFundData(fund, { suppressRender: true });
+                    await ensureHistoryForPositionIfNeeded(fund);
 
                     const navDateStr0 = getDateStr(fund.navDate);
                     const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
