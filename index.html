@@ -281,13 +281,13 @@
         .fund-title-main { font-size: 1.75rem; font-weight: 800; color: var(--gray-900); margin-bottom: 8px; }
         .fund-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
         .fund-code-large { font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; color: var(--gray-600); background: var(--gray-50); padding: 6px 14px; border-radius: 10px; font-weight: 600; border: 1px solid var(--gray-200); }
-        .market-status { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 10px; font-size: 0.8125rem; font-weight: 600; }
+        .market-status, .remind-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 10px; font-size: 0.8125rem; font-weight: 600; }
         .market-status.open { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
         .market-status.closed { background: var(--gray-50); color: var(--gray-700); border: 1px solid var(--gray-200); }
         .update-time { font-size: 0.8125rem; color: var(--gray-600); background: var(--gray-50); padding: 6px 14px; border-radius: 10px; border: 1px solid var(--gray-200); }
         .gz-delay-badge { display: inline-flex; align-items: center; justify-content: center; height: 18px; padding: 0 6px; margin-left: 8px; border-radius: 999px; border: 1px solid rgba(139,92,246,0.22); background: rgba(139,92,246,0.10); color: #7c3aed; font-size: 0.6875rem; font-weight: 800; line-height: 18px; vertical-align: middle; user-select: none; }
         .gz-delay-badge .icon { display: inline-flex; align-items: center; justify-content: center; height: 18px; font-size: 0.75rem; line-height: 18px; margin-right: 3px; }
-        .remind-chip { font-size: 0.8125rem; color: #b45309; background: rgba(245, 158, 11, 0.10); padding: 6px 12px; border-radius: 10px; border: 1px solid rgba(245, 158, 11, 0.22); cursor: pointer; user-select: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+        .remind-chip { color: #b45309; background: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.22); cursor: pointer; user-select: none; font-weight: 700; }
         .remind-chip.active { color: #047857; background: rgba(16, 185, 129, 0.10); border-color: rgba(16, 185, 129, 0.22); }
         .remind-chip.fired { color: var(--gray-700); background: var(--gray-50); border-color: var(--gray-200); }
         .remind-chip.alert { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
@@ -448,7 +448,7 @@
             .chart-container { padding: 16px; }
             .side-card { padding: 16px; }
             .fund-meta { gap: 8px; }
-            .update-time, .remind-chip { padding: 6px 14px; line-height: 1; display: inline-flex; align-items: center; }
+            .update-time { line-height: 1; display: inline-flex; align-items: center; }
             .chart-header { flex-direction: column; align-items: flex-start; gap: 12px; }
             .time-tabs { width: 100%; justify-content: space-between; }
             .time-tab { padding: 8px 12px; font-size: 0.8125rem; }
@@ -483,7 +483,8 @@
         
         @media (max-width: 480px) {
             .optional-inputs { grid-template-columns: 1fr; }
-            .fund-code-large, .market-status, .update-time, .remind-chip { font-size: 0.75rem; padding: 4px 10px; line-height: 1; display: inline-flex; align-items: center; }
+            .fund-code-large, .market-status, .update-time, .remind-chip { font-size: 0.75rem; padding: 4px 10px; line-height: 1; }
+            .update-time { display: inline-flex; align-items: center; }
             .overview-refresh-btn { width: 36px; height: 36px; padding: 0; border-radius: 12px; gap: 0; }
             .overview-refresh-btn .refresh-text { display: none; }
             .overview-card-metric, .overview-card-time { flex: 1 1 calc(50% - 5px); }
@@ -2494,12 +2495,19 @@
                         
                         // 批量读取DOM避免强制重排
                         const badge = item.querySelector('.fund-code-chg');
+                        const nameEl = item.querySelector('.fund-name');
                         const metricValues = item.querySelectorAll('.metric-value');
                         
                         // 批量写入DOM
                         if (badge) {
                             badge.className = `fund-code-chg ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'neutral'}`;
                             badge.textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
+                        }
+
+                        if (nameEl) {
+                            const arrow = nameEl.querySelector('.fund-collapse-arrow');
+                            nameEl.textContent = fund.name || '加载中...';
+                            if (arrow) nameEl.appendChild(arrow);
                         }
                         
                         if (metricValues[0]) metricValues[0].textContent = displayNav;
