@@ -1303,6 +1303,7 @@
             saveFunds();
             closePosModal();
             renderFundList();
+            syncOverviewAfterPositionChange(fund);
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === _posEditCode || selectedFund?.code === fund.code) updateMainDisplay(fund);
             showToast('持仓信息已更新');
@@ -1393,6 +1394,7 @@
             saveFunds();
             renderPosBuyHistory(fund);
             renderFundList();
+            syncOverviewAfterPositionChange(fund);
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === fund.code) updateMainDisplay(fund);
             showToast('已删除一笔买入记录');
@@ -1417,6 +1419,7 @@
             saveFunds();
             renderPosSellHistory(fund);
             renderFundList();
+            syncOverviewAfterPositionChange(fund);
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === fund.code) updateMainDisplay(fund);
             showToast('已删除一笔卖出记录');
@@ -1426,6 +1429,7 @@
             if (!_posEditCode) return;
             const fund = funds.find(f => f.code === _posEditCode);
             if (!fund) return;
+            if (!confirm('确认清空所有买入记录？')) return;
             const buys = getFundBuys(fund);
             if (!buys.length) return;
             fund.buys = [];
@@ -1434,15 +1438,17 @@
             saveFunds();
             renderPosBuyHistory(fund);
             renderFundList();
+            syncOverviewAfterPositionChange(fund);
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === fund.code) updateMainDisplay(fund);
-            showToast('已清空买入历史');
+            showToast('已清空买入记录');
         }
 
         function clearPosSells() {
             if (!_posEditCode) return;
             const fund = funds.find(f => f.code === _posEditCode);
             if (!fund) return;
+            if (!confirm('确认清空所有卖出记录？')) return;
             const sells = getFundSells(fund);
             if (!sells.length) return;
             fund.sells = [];
@@ -1451,9 +1457,10 @@
             saveFunds();
             renderPosSellHistory(fund);
             renderFundList();
+            syncOverviewAfterPositionChange(fund);
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === fund.code) updateMainDisplay(fund);
-            showToast('已清空卖出历史');
+            showToast('已清空卖出记录');
         }
 
         function posQuickAction(action) {
@@ -4432,6 +4439,15 @@
             } catch (e) {
                 // ignore
             }
+        }
+
+        function syncOverviewAfterPositionChange(fund) {
+            const main0 = document.querySelector('.main-content');
+            if (!main0 || !main0.classList.contains('overview-mode')) return;
+            renderFundOverview();
+            ensureHistoryForPositionIfNeeded(fund).then(() => {
+                if (main0.classList.contains('overview-mode')) renderFundOverview();
+            });
         }
 
         function updateAllPositionSummary() {
