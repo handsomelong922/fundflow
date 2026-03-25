@@ -1327,7 +1327,8 @@
             }
             list.innerHTML = buys.map(b => {
                 const eff = getFirstHistoryPointOnOrAfter(fund.code, b.date)?.date;
-                const sub = eff ? `预计 ${eff} 生效` : '待净值披露后生效';
+                const effT1 = eff ? getNextHistoryDate(fund.code, eff) : '';
+                const sub = effT1 ? `预计 ${effT1} 生效` : '待净值披露后生效';
                 const key = `${b.date}|${Number(b.amount).toFixed(2)}`;
                 return `
                     <div class="pos-buy-item">
@@ -1358,7 +1359,8 @@
             }
             list.innerHTML = sells.map(s => {
                 const eff = getFirstHistoryPointOnOrAfter(fund.code, s.date)?.date;
-                const sub = eff ? `预计 ${eff} 生效` : '待净值披露后生效';
+                const effT1 = eff ? getNextHistoryDate(fund.code, eff) : '';
+                const sub = effT1 ? `预计 ${effT1} 生效` : '待净值披露后生效';
                 const key = s.all ? `${s.date}|ALL` : `${s.date}|${Number(s.amount).toFixed(2)}`;
                 const amtText = s.all ? '清仓' : `¥${Number(s.amount).toFixed(2)}`;
                 return `
@@ -3390,6 +3392,26 @@
                             }
                         }
 
+                        // 买入当日：首次建仓时当日盈亏应为0（即使今日已披露官方净值，也从次日开始计收益）
+                        {
+                            const buys0 = getFundBuys(fund);
+                            const sells0 = getFundSells(fund);
+                            if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
+                                const todayBuyEff = buys0.some(b => {
+                                    const bp = getFirstHistoryPointOnOrAfter(fund.code, b.date);
+                                    return bp && bp.date === todayStr;
+                                });
+                                if (todayBuyEff) {
+                                    const prevShares0 = baseDate ? calcSharesAsOfDate(fund.code, fund, baseDate) : 0;
+                                    if (!(Number.isFinite(prevShares0) && prevShares0 > 0)) {
+                                        dailyProfit = 0;
+                                        prevValue = todayValue;
+                                        dailyProfitSource = 'prebuy';
+                                    }
+                                }
+                            }
+                        }
+
                         // 回退：若无法用历史净值差分，则用 dayGrowth 反推
                         if (!dailyProfitSource) {
                             const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
@@ -4105,6 +4127,16 @@
             return null;
         }
 
+        function getNextHistoryDate(code, dateStr) {
+            const all = historyCache[code];
+            if (!Array.isArray(all) || all.length === 0 || !dateStr) return '';
+            for (let i = 0; i < all.length; i++) {
+                const d = tsToDateStr(all[i].x);
+                if (d > dateStr) return d;
+            }
+            return '';
+        }
+
         function getHistoryPointByDate(code, dateStr) {
             const all = historyCache[code];
             if (!Array.isArray(all) || all.length === 0 || !dateStr) return null;
@@ -4479,6 +4511,27 @@
                     dailyProfit = (todayNavToUse - baseNav) * sharesPrev0;
                 } else {
                     hasDiff = false;
+                }
+            }
+
+            // 买入当日：首次建仓时当日盈亏为0（从次日开始计收益）
+            {
+                const sh0 = getShanghaiTimeParts();
+                const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+                const buys0 = getFundBuys(fund);
+                const sells0 = getFundSells(fund);
+                if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
+                    const todayBuyEff = buys0.some(b => {
+                        const bp = getFirstHistoryPointOnOrAfter(fund.code, b.date);
+                        return bp && bp.date === todayStr0;
+                    });
+                    if (todayBuyEff) {
+                        const baseDate0 = baseDate || '';
+                        const prevShares0 = baseDate0 ? calcSharesAsOfDate(fund.code, fund, baseDate0) : 0;
+                        if (!(Number.isFinite(prevShares0) && prevShares0 > 0)) {
+                            return { ok: true, dailyProfit: 0 };
+                        }
+                    }
                 }
             }
 
@@ -5827,38 +5880,39 @@
                     let sharesPrev = 0;
                     const canCalc = !!fund;
                     if (canCalc) {
-                        if (!firstEffBuyDate || prevDate >= firstEffBuyDate) {
+                        const profitEligible = (!firstEffBuyDate || prevDate >= firstEffBuyDate);
+                        if (profitEligible) {
                             sharesPrev = calcSharesAsOfDate(code, fund, prevDate);
-                        }
 
-                        // 兜底1：若无卖出记录，直接用买入份额求和（避免因边界导致 calcSharesAsOfDate 算出 NaN/0）
-                        if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
-                            const buys0 = getFundBuys(fund);
-                            const sells0 = getFundSells(fund);
-                            if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
-                                let shSum = 0;
-                                for (const b of buys0) {
-                                    const bp = getFirstHistoryPointOnOrAfter(code, b.date);
-                                    const eff = bp?.date;
-                                    const nav0 = bp ? Number(bp.y) : NaN;
-                                    const amt = Number(b.amount);
-                                    if (!eff || eff > prevDate || !Number.isFinite(nav0) || nav0 <= 0 || !Number.isFinite(amt) || amt <= 0) continue;
-                                    shSum += amt / nav0;
+                            // 兜底1：若无卖出记录，直接用买入份额求和（避免因边界导致 calcSharesAsOfDate 算出 NaN/0）
+                            if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
+                                const buys0 = getFundBuys(fund);
+                                const sells0 = getFundSells(fund);
+                                if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
+                                    let shSum = 0;
+                                    for (const b of buys0) {
+                                        const bp = getFirstHistoryPointOnOrAfter(code, b.date);
+                                        const eff = bp?.date;
+                                        const nav0 = bp ? Number(bp.y) : NaN;
+                                        const amt = Number(b.amount);
+                                        if (!eff || eff > prevDate || !Number.isFinite(nav0) || nav0 <= 0 || !Number.isFinite(amt) || amt <= 0) continue;
+                                        shSum += amt / nav0;
+                                    }
+                                    if (Number.isFinite(shSum) && shSum > 0) sharesPrev = shSum;
                                 }
-                                if (Number.isFinite(shSum) && shSum > 0) sharesPrev = shSum;
                             }
-                        }
 
-                        // 兜底2：旧结构 shares
-                        if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
-                            const legacy = getPositionFromLegacy(fund);
-                            if (legacy.has) sharesPrev = Number(legacy.shares) || 0;
-                        }
+                            // 兜底2：旧结构 shares
+                            if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
+                                const legacy = getPositionFromLegacy(fund);
+                                if (legacy.has) sharesPrev = Number(legacy.shares) || 0;
+                            }
 
-                        // 兜底3：当前持仓 shares（仅用于展示兜底）
-                        if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
-                            const posNow = getPosition(fund);
-                            if (posNow && posNow.has) sharesPrev = Number(posNow.shares) || 0;
+                            // 兜底3：当前持仓 shares（仅用于展示兜底）
+                            if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
+                                const posNow = getPosition(fund);
+                                if (posNow && posNow.has) sharesPrev = Number(posNow.shares) || 0;
+                            }
                         }
                     }
 
