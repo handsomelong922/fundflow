@@ -2608,18 +2608,21 @@
             function showHintOnce() {
                 if (!hintEl) return;
                 if (!isMobile()) return;
-                hintEl.classList.add('show');
-                hintEl.style.display = 'flex';
+                if (localStorage.getItem('swipeHintShown') === '1') return;
+                localStorage.setItem('swipeHintShown', '1');
+
+                setTimeout(() => {
+                    hintEl.classList.add('show');
+                }, 300);
+
                 setTimeout(() => {
                     hintEl.classList.remove('show');
-                    hintEl.style.display = 'none';
-                }, 4200);
+                }, 10300);
             }
 
             function dismissHint() {
                 if (!hintEl) return;
                 hintEl.classList.remove('show');
-                hintEl.style.display = 'none';
             }
 
             function gotoDelta(delta) {
