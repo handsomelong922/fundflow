@@ -122,7 +122,7 @@
         .fund-item.card-expanded .fund-code-chg { display: none; }
         .fund-item.card-collapsed .fund-code-chg { display: inline-block; }
         .fund-actions { display: flex; gap: 6px; }
-        .btn-icon { width: 32px; height: 32px; border: none; background: var(--gray-100); border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .btn-icon { width: 32px; height: 32px; border: none; background: var(--gray-100); border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; line-height: 1; }
         .btn-icon:hover { background: var(--gray-200); transform: scale(1.1); }
         .fund-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
         .metric-card { background: linear-gradient(135deg, var(--gray-50) 0%, white 100%); padding: 12px; border-radius: 12px; border: 1px solid var(--gray-200); }
@@ -227,6 +227,7 @@
         .overview-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; }
         .overview-title { font-size: 1.75rem; font-weight: 800; color: var(--gray-900); margin-bottom: 12px; }
         .overview-subtitle { font-size: 1rem; color: var(--gray-600); }
+        .overview-header-right { display: flex; align-items: center; gap: 20px; }
         .overview-refresh-btn { padding: 14px 16px; border: 1.5px solid var(--primary); background: white; border-radius: 12px; font-size: 0.875rem; font-weight: 800; color: var(--primary); cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1; }
         .overview-refresh-btn:hover { background: var(--primary); color: white; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59,130,246,0.22); }
         .overview-refresh-btn:active { transform: translateY(0); }
@@ -268,6 +269,7 @@
         .overview-card-time-label { font-size: 0.6875rem; color: var(--gray-600); margin-bottom: 4px; text-transform: uppercase; font-weight: 700; }
         .overview-card-time-value { font-size: 0.8125rem; color: var(--gray-700); font-family: 'JetBrains Mono', monospace; }
         .overview-card-actions { display: flex; gap: 6px; justify-self: end; }
+        .overview-card-break { display: none; }
         .overview-empty { text-align: center; padding: 100px 32px; color: var(--gray-500); }
         .overview-empty-icon { font-size: 4rem; margin-bottom: 16px; opacity: 0.5; }
         .overview-empty-text { font-size: 1.125rem; font-weight: 600; margin-bottom: 8px; color: var(--gray-700); }
@@ -431,13 +433,15 @@
             .main-header { padding: 80px 16px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
             .fund-overview-view { padding: 80px 16px 16px; }
             .overview-header { margin-bottom: 16px; }
+            .overview-header-right { flex-direction: column; align-items: stretch; gap: 12px; }
             .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 12px; }
             .overview-list { gap: 12px; }
             .overview-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 10px; padding: 12px; }
             .overview-card-info { order: 1; flex: 1 1 auto; min-width: 0; }
             .overview-card-actions { order: 2; flex: 0 0 auto; }
-            .overview-card-metric { order: 3; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
-            .overview-card-time { order: 4; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
+            .overview-card-break { display: block; order: 3; flex: 0 0 100%; height: 0; }
+            .overview-card-metric { order: 4; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
+            .overview-card-time { order: 5; flex: 1 1 calc(33.333% - 7px); min-width: 0; }
             .overview-card-name { font-size: 1rem; margin-bottom: 4px; }
             .overview-card-metric-label, .overview-card-time-label { font-size: 0.625rem; margin-bottom: 3px; }
             .overview-card-metric-value { font-size: 1rem; }
@@ -634,7 +638,7 @@
                     <div class="indices-inner">
                         <div class="indices-grid" id="indicesGrid">
                             </div>
-                        <button class="indices-refresh" onclick="fetchMarketIndices()">🔄 刷新指数</button>
+                        <button class="indices-refresh" onclick="fetchMarketIndices(true)">🔄 刷新指数</button>
                     </div>
                 </div>
             </div>
@@ -679,10 +683,12 @@
                         <h1 class="overview-title">基金概览</h1>
                         <p class="overview-subtitle">点击任意卡片查看详情</p>
                     </div>
-                    <button class="overview-refresh-btn" id="overviewRefreshBtn" onclick="refreshAllFunds()" title="刷新所有基金数据">
-                        <span class="refresh-icon">🔄</span>
-                        <span class="refresh-text">刷新</span>
-                    </button>
+                    <div class="overview-header-right">
+                        <button class="overview-refresh-btn" id="overviewRefreshBtn" onclick="refreshAllFunds()" title="刷新所有基金数据">
+                            <span class="refresh-icon">🔄</span>
+                            <span class="refresh-text">刷新</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="overviewGrid"></div>
             </div>
@@ -1215,6 +1221,12 @@
             renderPosBuyHistory(fund);
             renderPosSellHistory(fund);
             document.getElementById('posModalOverlay').classList.add('active');
+            ensureHistoryForPositionIfNeeded(fund).then(() => {
+                if (_posEditCode !== code) return;
+                if (!document.getElementById('posModalOverlay')?.classList.contains('active')) return;
+                renderPosBuyHistory(fund);
+                renderPosSellHistory(fund);
+            });
             // 短延迟后 focus 金额输入框
             setTimeout(() => document.getElementById('posAmount').focus(), 120);
         }
@@ -1247,6 +1259,15 @@
             if (e.target === document.getElementById('posModalOverlay')) closePosModal();
         }
 
+        function getPosSellAvailableAmount(fund) {
+            if (!fund) return NaN;
+            const m = calcPositionMetricsOfficialT2FromBuys(fund);
+            if (m && m.ok && Number.isFinite(m.value) && m.value > 0) return Number(m.value);
+            const pos = getPosition(fund);
+            if (pos && pos.has && Number.isFinite(pos.invested) && pos.invested > 0) return Number(pos.invested);
+            return NaN;
+        }
+
         function savePosModal() {
             if (!_posEditCode) return;
             const fund = funds.find(f => f.code === _posEditCode);
@@ -1273,17 +1294,29 @@
             if (action === 'sell') {
                 // 清仓：金额 <= 0 或空 => 记录“卖出全部”
                 if (!Array.isArray(fund.sells)) fund.sells = [];
-                if (!Number.isFinite(amount) || amount <= 0) {
+                const available = getPosSellAvailableAmount(fund);
+                const sellDate = (/^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : (() => {
                     const sh = getShanghaiTimeParts();
-                    const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
-                    if (!fund.sells.some(x => x && x.all === true && x.date === todayStr)) fund.sells.push({ date: todayStr, all: true });
+                    return `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+                })();
+
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    if (!fund.sells.some(x => x && x.all === true && x.date === sellDate)) fund.sells.push({ date: sellDate, all: true });
                 } else {
-                    const idx = fund.sells.findIndex(x => x && x.date === date && x.all !== true);
-                    if (idx >= 0) {
-                        const prevAmt = Number(fund.sells[idx].amount);
-                        fund.sells[idx].amount = (Number.isFinite(prevAmt) ? prevAmt : 0) + amount;
+                    if (amount < 0.01) {
+                        showToast('卖出金额需≥0.01', 'error');
+                        return;
+                    }
+                    if (Number.isFinite(available) && available > 0 && amount > available) {
+                        if (!fund.sells.some(x => x && x.all === true && x.date === sellDate)) fund.sells.push({ date: sellDate, all: true });
                     } else {
-                        fund.sells.push({ amount, date, all: false });
+                        const idx = fund.sells.findIndex(x => x && x.date === sellDate && x.all !== true);
+                        if (idx >= 0) {
+                            const prevAmt = Number(fund.sells[idx].amount);
+                            fund.sells[idx].amount = (Number.isFinite(prevAmt) ? prevAmt : 0) + amount;
+                        } else {
+                            fund.sells.push({ amount, date: sellDate, all: false });
+                        }
                     }
                 }
             } else {
@@ -1328,7 +1361,7 @@
             list.innerHTML = buys.map(b => {
                 const eff = getFirstHistoryPointOnOrAfter(fund.code, b.date)?.date;
                 const effT1 = eff ? getNextHistoryDate(fund.code, eff) : '';
-                const sub = effT1 ? `预计 ${effT1} 生效` : '待净值披露后生效';
+                const sub = eff ? (effT1 ? `预计 ${effT1} 生效` : `预计 ${eff} 生效`) : '待净值披露后生效';
                 const key = `${b.date}|${Number(b.amount).toFixed(2)}`;
                 return `
                     <div class="pos-buy-item">
@@ -1360,7 +1393,7 @@
             list.innerHTML = sells.map(s => {
                 const eff = getFirstHistoryPointOnOrAfter(fund.code, s.date)?.date;
                 const effT1 = eff ? getNextHistoryDate(fund.code, eff) : '';
-                const sub = effT1 ? `预计 ${effT1} 生效` : '待净值披露后生效';
+                const sub = eff ? (effT1 ? `预计 ${effT1} 生效` : `预计 ${eff} 生效`) : '待净值披露后生效';
                 const key = s.all ? `${s.date}|ALL` : `${s.date}|${Number(s.amount).toFixed(2)}`;
                 const amtText = s.all ? '清仓' : `¥${Number(s.amount).toFixed(2)}`;
                 return `
@@ -1472,6 +1505,9 @@
         function posQuickAction(action) {
             const amountInput = document.getElementById('posAmount');
             const current = parseFloat(amountInput.value) || 0;
+            const mode = (document.getElementById('posAction')?.value || 'buy');
+            const fund = _posEditCode ? funds.find(f => f.code === _posEditCode) : null;
+            const available = (mode === 'sell') ? getPosSellAvailableAmount(fund) : NaN;
             switch (action) {
                 case 'clear':
                     // 清仓属于卖出
@@ -1479,13 +1515,19 @@
                     amountInput.value = '0';
                     break;
                 case 'half':
-                    amountInput.value = (current / 2).toFixed(2);
+                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
+                        ? (available / 2).toFixed(2)
+                        : (current / 2).toFixed(2);
                     break;
                 case 'third':
-                    amountInput.value = (current / 3).toFixed(2);
+                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
+                        ? (available / 3).toFixed(2)
+                        : (current / 3).toFixed(2);
                     break;
                 case 'quarter':
-                    amountInput.value = (current / 4).toFixed(2);
+                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
+                        ? (available / 4).toFixed(2)
+                        : (current / 4).toFixed(2);
                     break;
                 case 'double':
                     amountInput.value = (current * 2).toFixed(2);
@@ -1510,7 +1552,7 @@
             content.classList.toggle('open');
             arrow.classList.toggle('open');
             if (content.classList.contains('open') && Object.keys(marketIndices).length === 0) {
-                fetchMarketIndices();
+                fetchMarketIndices(false);
             }
         }
 
@@ -1532,14 +1574,23 @@
             us_spx: { name: '标普500', flag: '🇺🇸', secid: '100.SPX', type: 'us' }
         };
 
-        async function fetchMarketIndices() {
+        async function fetchMarketIndices(force = false) {
             const grid = document.getElementById('indicesGrid');
             if (!grid) return;
+
+            const status = getMarketStatus();
+            const allowCn = !!force || !!(status && status.isOpen);
+            const allowUs = !!force || isUsMarketOpenNow();
 
             const nowTs = Date.now();
             const trendTasks = [];
             for (const [k, cfg] of Object.entries(MARKET_INDICES)) {
                 const cached = indexTrendCache[k];
+                if (!force) {
+                    // 休市冻结：只有在“已有缓存”的情况下跳过拉取；若无缓存，允许首次进入拉取一次，避免卡片显示“加载失败”。
+                    if (cfg.type === 'cn' && !allowCn && cached) continue;
+                    if (cfg.type === 'us' && !allowUs && cached) continue;
+                }
                 const fresh = cached && (nowTs - (cached.updatedAt || 0) < 20000);
                 if (!fresh) trendTasks.push(fetchIndexTrendSnapshot(k, cfg));
             }
@@ -2228,7 +2279,6 @@
                 attemptedSources.push(source.name);
                 const startTime = Date.now();
                 try {
-                    console.log(`🔄 [${source.name}] 尝试获取数据...`);
                     const data = await source.fetch(code);
                     const duration = Date.now() - startTime;
                     if (!data || !data.dwjz || !data.name) throw new Error('数据不完整');
@@ -2239,7 +2289,6 @@
                     ensureSourceStat(source.name);
                     sourceStats[source.name].success++;
                     sourceStats[source.name].totalTime += duration;
-                    console.log(`✅ [${source.name}] 成功！耗时: ${duration}ms`);
                     updateSourceIndicator(source.name);
                     return data;
                 } catch (error) {
@@ -2273,11 +2322,9 @@
         function updateSourceIndicator(sourceName) { lastSuccessfulSource = sourceName; const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
 
         window.addEventListener('DOMContentLoaded', () => { 
-            console.log('Higher | 9880699@gmail.com');
-            console.log('🚀 性能优化已启用: DocumentFragment批量DOM, requestIdleCallback懒加载, 图表节流200ms, 事件委托');
             initChart(); 
             renderFundList(); 
-            fetchMarketIndices(); 
+            fetchMarketIndices(false); 
             initMobileSidebarSwipeClose();
             initMobileSwipeNavigation(); 
             initMobileCollapseExpandSwipe();
@@ -3332,6 +3379,34 @@
                 ? profitNav
                 : (Number.isFinite(officialNav0) ? officialNav0 : profitNav);
             const pos = getPosition(fund);
+
+            // 当日盈亏模式：优先用“官方历史净值差分 * 前一披露日份额”展示
+            // 即使用户在最新披露日做了卖出（导致当前持仓份额下降或清仓），当日盈亏也应按前一披露日份额计算，且不应依赖实时估值。
+            if (showDailyProfit) {
+                const raw0 = historyCache[fund.code];
+                const hasHistory0 = Array.isArray(raw0) && raw0.length >= 2;
+                const last0 = hasHistory0 ? raw0[raw0.length - 1] : null;
+                const prev0 = hasHistory0 ? raw0[raw0.length - 2] : null;
+                const lastNav0 = last0 ? Number(last0.y) : NaN;
+                const prevNav0 = prev0 ? Number(prev0.y) : NaN;
+                const prevDate0 = prev0 ? tsToDateStr(prev0.x) : '';
+
+                if (Number.isFinite(lastNav0) && lastNav0 > 0 && Number.isFinite(prevNav0) && prevNav0 > 0 && prevDate0) {
+                    const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate0);
+                    if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                        const dailyProfit0 = (lastNav0 - prevNav0) * sharesPrev0;
+                        document.getElementById('totalProfit').textContent = '¥' + dailyProfit0.toFixed(2);
+                        document.getElementById('totalProfit').className = `stat-value ${dailyProfit0>=0?'positive':'negative'}`;
+                        const ppEl0 = document.getElementById('profitPercent');
+                        ppEl0.innerHTML = '持仓金额 ¥' + (lastNav0 * sharesPrev0).toFixed(2) + ' <span class="day-growth-source official">官方</span>';
+                        ppEl0.className = 'stat-change';
+                        ppEl0.style.color = '';
+                        const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                        if (profitCard0) profitCard0.textContent = '当日盈亏';
+                        return;
+                    }
+                }
+            }
             if (pos.has && Number.isFinite(navForPositionMetrics)) {
                 const m = calcPositionMetrics(pos, navForPositionMetrics);
                 if (m.ok) {
@@ -3380,6 +3455,15 @@
                                 baseDate = lastDate;
                                 dailyProfitSource = 'est';
                             }
+                        }
+
+                        // 今日未披露且无今日估算：用“最新两天官方历史净值差分”展示上一披露日的当日盈亏
+                        // 场景：次日凌晨/盘前（今天 != 最新披露日）时，仍应显示上一披露日的当日盈亏，不应因卖出记录导致回退口径偏差
+                        if (!dailyProfitSource && Number.isFinite(lastNav) && lastNav > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate && lastDate) {
+                            todayNavToUse = lastNav;
+                            baseNav = prevNav;
+                            baseDate = prevDate;
+                            dailyProfitSource = 'official';
                         }
 
                         if (Number.isFinite(todayNavToUse) && todayNavToUse > 0 && Number.isFinite(baseNav) && baseNav > 0 && baseDate) {
@@ -4529,7 +4613,7 @@
                         const baseDate0 = baseDate || '';
                         const prevShares0 = baseDate0 ? calcSharesAsOfDate(fund.code, fund, baseDate0) : 0;
                         if (!(Number.isFinite(prevShares0) && prevShares0 > 0)) {
-                            return { ok: true, dailyProfit: 0 };
+                            return { ok: true, dailyProfit: 0, prevValue: todayValue, todayValue };
                         }
                     }
                 }
@@ -4551,14 +4635,12 @@
                 }
             }
 
-            return { ok: true, dailyProfit };
+            return { ok: true, dailyProfit, prevValue, todayValue };
         }
 
         async function ensureHistoryForPositionIfNeeded(fund) {
             if (!fund || !fund.code) return;
             if (historyCache[fund.code]) return;
-            const legacy = getPositionFromLegacy(fund);
-            if (legacy && legacy.has) return;
             const buys = getFundBuys(fund);
             const sells = getFundSells(fund);
             if ((!Array.isArray(buys) || buys.length === 0) && (!Array.isArray(sells) || sells.length === 0)) return;
@@ -4718,14 +4800,53 @@
                         <div class="overview-empty-subtext">从左侧添加基金开始监控</div>
                     </div>
                 `;
+                // 更新统计卡片为空状态
+                updateOverviewStats({ totalCount: 0, holdingCount: 0, totalDailyProfit: 0, totalDailyReturnPct: NaN, latestUpdateText: '--' });
                 return;
             }
+            
+            // 计算统计数据
+            let holdingCount = 0;
+            let totalDailyProfit = 0;
+            let totalPrevValue = 0;
+            let latestUpdateText = '--';
+            let latestUpdateMin = -1;
             
             // 使用 DocumentFragment 批量操作
             const fragment = document.createDocumentFragment();
             const tempDiv = document.createElement('div');
+
+            const summaryHtml = `
+                <div class="overview-card overview-summary-card">
+                    <div class="overview-card-info">
+                        <div class="overview-card-name">概览汇总</div>
+                        <div class="overview-card-code">今日</div>
+                    </div>
+                    <div class="overview-card-metric">
+                        <div class="overview-card-metric-label">持仓基金</div>
+                        <div class="overview-card-metric-value" id="overviewHoldingCount">--</div>
+                    </div>
+                    <div class="overview-card-metric">
+                        <div class="overview-card-metric-label">日收益率</div>
+                        <div class="overview-card-metric-value" id="overviewDailyReturn">--</div>
+                    </div>
+                    <div class="overview-card-metric">
+                        <div class="overview-card-metric-label">当日盈亏</div>
+                        <div class="overview-card-metric-value" id="overviewDailyProfit">--</div>
+                    </div>
+                    <div class="overview-card-time">
+                        <div class="overview-card-time-label">更新时间</div>
+                        <div class="overview-card-time-value" id="overviewSummaryUpdateTime">--</div>
+                    </div>
+                    <div class="overview-card-actions">
+                        <button class="btn-icon" type="button" onclick="event.stopPropagation();" title="收益率情绪"><span id="overviewMoodReturn">😐</span></button>
+                        <button class="btn-icon" type="button" onclick="event.stopPropagation();" title="盈亏情绪"><span id="overviewMoodProfit">😶</span></button>
+                    </div>
+                    <div class="overview-card-break"></div>
+                </div>
+            `;
             
-            tempDiv.innerHTML = funds.map(fund => {
+            tempDiv.innerHTML = summaryHtml + funds.map(fund => {
                 const displayNav = getDisplayNav(fund);
                 const dayGrowth = getDisplayDayGrowth(fund);
                 const isPositive = dayGrowth >= 0;
@@ -4735,14 +4856,27 @@
                 const updateTime = fund.lastUpdateTime || '--';
                 const timeMatch = updateTime.match(/(\d{2}:\d{2})/);
                 const displayTime = timeMatch ? timeMatch[1] : '--';
+                if (displayTime && displayTime !== '--' && /^\d{2}:\d{2}$/.test(displayTime)) {
+                    const hm = displayTime.split(':');
+                    const tmin = Number(hm[0]) * 60 + Number(hm[1]);
+                    if (Number.isFinite(tmin) && tmin > latestUpdateMin) {
+                        latestUpdateMin = tmin;
+                        latestUpdateText = displayTime;
+                    }
+                }
                 
                 // 获取持仓信息
                 const pos = getPosition(fund);
                 let positionInfo = '';
                 if (pos.has) {
+                    holdingCount++;
                     const dp = calcDailyProfitForFund(fund);
                     if (dp.ok) {
                         const v = Number(dp.dailyProfit) || 0;
+                        totalDailyProfit += v;
+                        const pv = Number(dp.prevValue);
+                        if (Number.isFinite(pv) && pv > 0) totalPrevValue += pv;
+                        
                         const cls = v >= 0 ? 'positive' : 'negative';
                         positionInfo = `
                             <div class="overview-card-metric">
@@ -4787,6 +4921,7 @@
                             <button class="btn-icon" onclick="event.stopPropagation(); openPosModal('${fund.code}')" title="编辑持仓">✏️</button>
                             <button class="btn-icon" onclick="event.stopPropagation(); deleteFund('${fund.code}')" title="删除">🗑️</button>
                         </div>
+                        <div class="overview-card-break"></div>
                     </div>
                 `;
             }).join('');
@@ -4802,6 +4937,60 @@
             // 使用事件委托
             list.removeEventListener('click', handleOverviewClick);
             list.addEventListener('click', handleOverviewClick);
+            
+            // 更新统计卡片
+            updateOverviewStats({
+                totalCount: funds.length,
+                holdingCount,
+                totalDailyProfit,
+                totalDailyReturnPct: (Number.isFinite(totalPrevValue) && totalPrevValue > 0) ? (totalDailyProfit / totalPrevValue * 100) : NaN,
+                latestUpdateText
+            });
+        }
+
+        function updateOverviewStats(stats) {
+            const holdingCountEl = document.getElementById('overviewHoldingCount');
+            const dailyReturnEl = document.getElementById('overviewDailyReturn');
+            const dailyProfitEl = document.getElementById('overviewDailyProfit');
+            const updateTimeEl = document.getElementById('overviewSummaryUpdateTime');
+            const moodProfitEl = document.getElementById('overviewMoodProfit');
+            const moodReturnEl = document.getElementById('overviewMoodReturn');
+            
+            if (!holdingCountEl || !dailyReturnEl || !dailyProfitEl || !updateTimeEl) return;
+            
+            const { totalCount, holdingCount, totalDailyProfit, totalDailyReturnPct, latestUpdateText } = stats;
+            
+            // 持仓基金数量
+            holdingCountEl.textContent = holdingCount > 0 ? `${holdingCount}/${totalCount}` : '--';
+            
+            // 日收益率
+            if (Number.isFinite(totalDailyReturnPct) && totalDailyReturnPct !== 0) {
+                dailyReturnEl.textContent = (totalDailyReturnPct >= 0 ? '+' : '') + totalDailyReturnPct.toFixed(2) + '%';
+                dailyReturnEl.className = `overview-card-metric-value ${totalDailyReturnPct >= 0 ? 'positive' : 'negative'}`;
+            } else {
+                dailyReturnEl.textContent = '--';
+                dailyReturnEl.className = 'overview-card-metric-value';
+            }
+            
+            // 当日盈亏
+            if (Number.isFinite(totalDailyProfit) && totalDailyProfit !== 0) {
+                dailyProfitEl.textContent = '¥' + totalDailyProfit.toFixed(2);
+                dailyProfitEl.className = `overview-card-metric-value ${totalDailyProfit >= 0 ? 'positive' : 'negative'}`;
+            } else {
+                dailyProfitEl.textContent = '--';
+                dailyProfitEl.className = 'overview-card-metric-value';
+            }
+            
+            updateTimeEl.textContent = (latestUpdateText && latestUpdateText !== '--') ? latestUpdateText : '--';
+
+            if (moodProfitEl) {
+                const v = Number(totalDailyProfit);
+                moodProfitEl.textContent = (Number.isFinite(v) && v > 0.01) ? '🤑' : ((Number.isFinite(v) && v < -0.01) ? '😭' : '😶');
+            }
+            if (moodReturnEl) {
+                const r = Number(totalDailyReturnPct);
+                moodReturnEl.textContent = (Number.isFinite(r) && r > 0.01) ? '😄' : ((Number.isFinite(r) && r < -0.01) ? '😞' : '😐');
+            }
         }
 
         function handleOverviewClick(e) {
@@ -5010,7 +5199,6 @@
             if (!blockBaidu0) {
                 for (const source of baiduSources) {
                     try {
-                        console.log(`🔄 [持仓-${source.name}] 尝试获取...`);
                         const json = await runWithSourceStat(`holdings_${source.name}`, async () => await source.fetch());
 
                         // 百度 newest（当日官方日涨跌幅/净值）优先提取，供右侧“日涨跌幅”即时展示
@@ -5044,7 +5232,6 @@
                         if (!heavyStockBody || heavyStockBody.length === 0) {
                             if (noStockHoldingsByType) {
                                 baiduData = { holdings: [], sectors: [], holdingDate: '' };
-                                console.log(`ℹ️ [持仓-${source.name}] ${fund.code} 判定为无股票持仓基金，跳过TOP10持仓渲染`);
                                 break;
                             }
                             throw new Error('heavyStock.body 为空');
@@ -5064,7 +5251,6 @@
                         }));
 
                         baiduData = { holdings, sectors, holdingDate };
-                        console.log(`✅ [持仓-${source.name}] 成功! 持仓${holdings.length}条, 板块${sectors.length}条, 日期: ${holdingDate}`);
                         break;
 
                     } catch (error) {
@@ -5076,7 +5262,6 @@
 
             // --- 数据源2 (备用): eastmoney HTML 爬取 ————————————————
             if (!baiduData) {
-                console.log('⚠️ Baidu数据源全部失败，尝试eastmoney备用源...');
                 try {
                     const url = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&topline=10&code=${fund.code}&year=&month=&rt=${Date.now()}`;
                     const apidata = await fetchApidataViaScript(url, 'holdings_eastmoney_apidata');
@@ -5115,7 +5300,6 @@
 
                     if (holdings.length > 0) {
                         baiduData = { holdings, sectors: [], holdingDate: '' };
-                        console.log(`✅ eastmoney备用源解析了 ${holdings.length} 条持仓`);
                     } else if (noStockHoldingsByType) {
                         baiduData = { holdings: [], sectors: [], holdingDate: '' };
                     }
@@ -5157,7 +5341,6 @@
             }
 
             // --- 获取股票实时行情（涨跌幅）————————————————————————————
-            console.log('📈 开始获取股票行情...');
             const secids = baiduData.holdings.map(h => getEastmoneySecId(h.code)).filter(Boolean).join(',');
             const quoteUrl = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&secids=${secids}&fields=f12,f3,f100&ut=fa5fd1943c7b386f172d6893dbfba10b&_=${Date.now()}`;
 
@@ -5947,14 +6130,12 @@
             }
 
             try {
-                console.log(`🔄 [历史-pingzhongdata] 拉取 ${code}...`);
                 await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
                 const raw = window.Data_netWorthTrend;
                 if (!Array.isArray(raw) || raw.length === 0) throw new Error('Data_netWorthTrend 为空');
 
                 // 缓存全部数据（每条 {x: 时间戳, y: 净值}）
                 historyCache[code] = raw.map(item => ({ x: item.x, y: item.y }));
-                console.log(`✅ [历史-pingzhongdata] ${code} 共 ${raw.length} 条，已缓存`);
 
                 // 用最新一条同步净值
                 const fundRef = funds.find(f => f.code === code);
@@ -6187,15 +6368,17 @@
                     }
 
                     if (refreshTick === 3) {
-                        const allowIndices = !!(status && status.canRealtimeUpdate);
+                        const allowCnIndices = !!(status && status.canRealtimeUpdate);
+                        const allowUsIndices = isUsMarketOpenNow();
                         const allowRetryAfterClose = canRetryIndicesAfterClose(status);
-                        // 休市：默认不周期性刷新指数（页面加载时已 fetchMarketIndices 一次）
-                        if (!allowIndices && !allowRetryAfterClose) return;
+                        // A股：休市期间冻结（仅盘后补齐 15:00 点允许低频重试）
+                        // 美股：休市期间冻结（仅在美股交易时段自动刷新）
+                        if (!allowCnIndices && !allowUsIndices && !allowRetryAfterClose) return;
 
-                        const interval = allowIndices ? minIndicesInterval : 30000;
+                        const interval = (allowCnIndices || allowUsIndices) ? minIndicesInterval : 30000;
                         if (now - lastIndicesRefreshAt >= interval) {
                             lastIndicesRefreshAt = now;
-                            await fetchMarketIndices();
+                            await fetchMarketIndices(false);
                             return;
                         }
                     }
