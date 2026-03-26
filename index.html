@@ -2164,7 +2164,13 @@
                 }, timeoutMs);
                 const cleanup = () => {
                     clearTimeout(timer);
-                    try { delete window[cbName]; } catch { window[cbName] = undefined; }
+                    // 避免竞态：超时/失败后脚本可能“晚到”，仍会执行 cbName(...)。
+                    // 若这里直接 delete，会导致控制台报 `cbName is not defined`。
+                    // 先替换为 no-op，再延迟删除。
+                    try { window[cbName] = () => {}; } catch {}
+                    setTimeout(() => {
+                        try { delete window[cbName]; } catch { window[cbName] = undefined; }
+                    }, 30000);
                     script.remove();
                 };
                 window[cbName] = (data) => {
@@ -2330,7 +2336,6 @@
             );
             initChart(); 
             renderFundList(); 
-            fetchMarketIndices(false); 
             initMobileSidebarSwipeClose();
             initMobileSwipeNavigation(); 
             initMobileCollapseExpandSwipe();
@@ -6283,6 +6288,10 @@
                     }
 
                     if (refreshTick === 3) {
+                        const indicesContent0 = document.getElementById('indicesContent');
+                        const indicesOpen0 = !!(indicesContent0 && indicesContent0.classList.contains('open'));
+                        if (!indicesOpen0) return;
+
                         const allowCnIndices = !!(status && status.canRealtimeUpdate);
                         const allowUsIndices = isUsMarketOpenNow();
                         const allowRetryAfterClose = canRetryIndicesAfterClose(status);
