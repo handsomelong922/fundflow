@@ -223,7 +223,12 @@
         .main-content.overview-mode .fund-detail-view { display: none; }
         .main-content.overview-mode .fund-overview-view { display: block; }
         .main-content:not(.overview-mode) .fund-overview-view { display: none; }
+        .main-content.summary-mode .fund-detail-view { display: none; }
+        .main-content.summary-mode .fund-overview-view { display: none; }
+        .main-content.summary-mode .fund-summary-view { display: block; }
+        .main-content:not(.summary-mode) .fund-summary-view { display: none; }
         .fund-overview-view { padding: 32px; overflow-y: auto; flex: 1; }
+        .fund-summary-view { padding: 32px; overflow-y: auto; flex: 1; }
         .overview-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; }
         .overview-title { font-size: 1.75rem; font-weight: 800; color: var(--gray-900); margin-bottom: 12px; }
         .overview-subtitle { font-size: 1rem; color: var(--gray-600); }
@@ -388,6 +393,40 @@
         .source-stats-table .success-rate.medium { color: #f59e0b; }
         .source-stats-table .success-rate.low { color: #ef4444; }
 
+        .summary-sort { padding: 8px 10px; border: 2px solid var(--gray-200); border-radius: 12px; font-size: 0.8125rem; background: rgba(255,255,255,0.95); font-weight: 700; width: auto; }
+
+        .summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 12px 0 16px; }
+        .summary-metric { background: rgba(255,255,255,0.95); border: 2px solid var(--gray-200); border-radius: 16px; padding: 16px 16px; }
+        .summary-metric-label { font-size: 0.75rem; color: var(--gray-600); font-weight: 900; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 8px; }
+        .summary-metric-label .icon { width: 22px; height: 22px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-700); font-size: 0.9rem; }
+        .summary-metric-value { font-size: 1.1rem; font-weight: 600; margin-top: 6px; color: var(--gray-800); font-family: 'JetBrains Mono', monospace; }
+        .summary-metric-value.positive { color: var(--success); }
+        .summary-metric-value.negative { color: var(--danger); }
+
+        .summary-table-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .summary-table-header .table-title { font-size: inherit; font-weight: inherit; }
+        .summary-table-header .summary-sort { margin-left: auto; flex: 0 0 auto; }
+
+        .summary-tags { display: flex; align-items: center; margin: 12px 0 8px; overflow: hidden; position: relative; }
+        .summary-tags-marquee { display: inline-flex; align-items: center; flex: 0 0 auto; width: max-content; animation: summaryMarquee 26s linear infinite; will-change: transform; }
+        .summary-tags-track { display: inline-flex; align-items: center; gap: 10px; padding-right: 10px; flex: 0 0 auto; white-space: nowrap; }
+        .summary-tags:hover .summary-tags-marquee { animation-play-state: paused; }
+        .summary-tag { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.95); border: 2px solid var(--gray-200); font-size: 0.875rem; color: var(--gray-700); font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+        @keyframes summaryMarquee { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
+        .summary-tag .icon { width: 22px; height: 22px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-700); font-size: 0.9rem; flex: 0 0 auto; }
+        .summary-tag b { font-weight: 900; color: var(--gray-900); }
+
+        #summaryScroll { max-height: 440px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
+        #summaryScroll table { min-width: 640px; }
+        #summaryScroll thead th { position: sticky; top: 0; background: white; z-index: 10; }
+        .summary-empty { text-align: center; padding: 40px 10px; color: var(--gray-500); }
+        .summary-row { cursor: pointer; transition: background 0.15s; }
+        .summary-row:hover { background: var(--gray-50); }
+
+        .summary-quote-container { margin-top: 12px; }
+        .summary-quote-text { font-size: 0.875rem; font-weight: 700; color: var(--gray-800); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .summary-quote-from { margin-top: 8px; font-size: 0.8125rem; color: var(--gray-600); font-weight: 700; text-align: right; }
+
         .swipe-hint { position: fixed; left: 12px; right: 12px; top: 50%; transform: translateY(-50%); display: none; align-items: center; justify-content: space-between; pointer-events: none; z-index: 2000; }
         .swipe-hint.show { display: flex; }
         .swipe-hint .arrow { width: 40px; height: 40px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900; color: rgba(255,255,255,0.95); background: rgba(17,24,39,0.35); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: swipeHintPulse 1.4s ease-in-out infinite; }
@@ -431,9 +470,13 @@
             .main-content { margin-left: 0; touch-action: pan-x pan-y; }
             .main-header { padding: 80px 16px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
             .fund-overview-view { padding: 80px 16px 16px; }
+            .fund-summary-view { padding: 80px 16px 16px; }
             .overview-header { margin-bottom: 16px; }
+            .summary-metrics { grid-template-columns: 1fr; }
+        
             .overview-header-right { flex-direction: column; align-items: stretch; gap: 12px; }
             .overview-refresh-btn { padding: 8px 10px; font-size: 0.8125rem; gap: 6px; border-radius: 12px; }
+        
             .overview-list { gap: 12px; }
             .overview-card { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 10px; padding: 12px; }
             .overview-card-info { order: 1; flex: 1 1 auto; min-width: 0; }
@@ -460,12 +503,11 @@
             .time-tab { padding: 8px 12px; font-size: 0.8125rem; }
             .input-row { grid-template-columns: 1fr 108px; }
             .btn-add { width: auto; min-width: 108px; }
-            .source-indicator { display: none; } /* 移动端隐藏数据源指示器 */
+            .source-indicator { display: none; }
             .market-indices { padding: 0; }
             .indices-toggle { padding: 12px 16px; }
             .indices-inner { padding: 16px; }
             .indices-content.open { max-height: calc(100vh - 220px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-            /* 移动端：两列显示 */
             .indices-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
             .index-card { padding: 10px 12px; min-height: auto; }
             .index-card.selected { grid-column: span 2; }
@@ -539,7 +581,6 @@
         </div>
     </div>
     
-    <!-- 持仓编辑对话框 -->
     <div class="pos-modal-overlay" id="posModalOverlay" onclick="posModalBgClick(event)">
         <div class="pos-modal">
             <div class="pos-modal-header">
@@ -690,6 +731,58 @@
                     </div>
                 </div>
                 <div id="overviewGrid"></div>
+            </div>
+
+            <div class="fund-summary-view" id="fundSummaryView">
+                <div class="overview-header">
+                    <div>
+                        <h1 class="overview-title">概览汇总</h1>
+                        <p class="overview-subtitle">点击基金可跳转详情</p>
+                    </div>
+                    <div class="overview-header-right">
+                        <button class="overview-refresh-btn" type="button" onclick="showOverviewMode()" title="返回基金概览">
+                            <span class="refresh-icon">⬅</span>
+                            <span class="refresh-text">返回</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="summary-metrics">
+                    <div class="summary-metric">
+                        <div class="summary-metric-label"><span class="icon">💰</span><span>持仓总金额</span></div>
+                        <div class="summary-metric-value" id="summaryTotalValue">--</div>
+                    </div>
+                    <div class="summary-metric">
+                        <div class="summary-metric-label"><span class="icon">🏆</span><span>累计收益</span></div>
+                        <div class="summary-metric-value" id="summaryTotalProfit">--</div>
+                    </div>
+                    <div class="summary-metric">
+                        <div class="summary-metric-label"><span class="icon">⚡</span><span>当日盈亏</span></div>
+                        <div class="summary-metric-value" id="summaryDailyProfit">--</div>
+                    </div>
+                </div>
+                <div class="data-table-container">
+                    <div class="table-header summary-table-header">
+                        <span class="table-title">组合持仓明细</span>
+                        <select class="summary-sort" id="summarySort" onchange="setSummarySort(this.value)">
+                            <option value="profit_desc">按收益↓</option>
+                            <option value="profit_asc">按收益↑</option>
+                            <option value="profitPct_desc">按收益率↓</option>
+                            <option value="profitPct_asc">按收益率↑</option>
+                        </select>
+                    </div>
+                    <div class="history-scroll" id="summaryScroll">
+                        <table>
+                            <thead><tr><th>基金</th><th>持仓金额</th><th>累计收益</th><th>收益率</th><th>当日盈亏</th><th>持有天数</th></tr></thead>
+                            <tbody id="summaryTableBody"><tr><td colspan="6" class="summary-empty">暂无持仓</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="summary-tags" id="summaryTags"></div>
+                <div class="data-table-container summary-quote-container" id="summaryQuoteWrap" style="display:none;">
+                    <div class="summary-quote-text" id="summaryQuoteText">--</div>
+                    <div class="summary-quote-from" id="summaryQuoteFrom">--</div>
+                </div>
             </div>
             
             <!-- 基金详情视图 -->
@@ -2605,6 +2698,8 @@
                 const mainContent0 = document.querySelector('.main-content');
                 if (mainContent0 && mainContent0.classList.contains('overview-mode')) {
                     renderFundOverview();
+                } else if (mainContent0 && mainContent0.classList.contains('summary-mode')) {
+                    renderSummaryView();
                 }
                 if (selectedFund?.code === fund.code) {
                     updateMainDisplay(selectedFund);
@@ -4518,6 +4613,21 @@
                 }
             }
 
+            // 非交易时段：当日盈亏与“日涨跌幅”保持联动。
+            // 使用最新披露官方净值对应的持仓金额作为基数，完全依赖 dayGrowth 动态计算。
+            if (Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
+                const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
+                if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
+                    const baseValue0 = lastNav * sharesLast0;
+                    const dayGrowth0 = parseFloat(fund.dayGrowth);
+                    if (Number.isFinite(dayGrowth0)) {
+                        const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
+                        const todayValue0 = baseValue0 + dailyProfit0;
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0, todayValue: todayValue0 };
+                    }
+                }
+            }
+
             // 非交易时段：用最新两天官方历史净值差分（展示上一披露日的当日盈亏）
             if (Number.isFinite(lastNav) && lastNav > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
                 const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
@@ -4547,11 +4657,20 @@
 
         function syncOverviewAfterPositionChange(fund) {
             const main0 = document.querySelector('.main-content');
-            if (!main0 || !main0.classList.contains('overview-mode')) return;
-            renderFundOverview();
-            ensureHistoryForPositionIfNeeded(fund).then(() => {
-                if (main0.classList.contains('overview-mode')) renderFundOverview();
-            });
+            if (!main0) return;
+            if (main0.classList.contains('overview-mode')) {
+                renderFundOverview();
+                ensureHistoryForPositionIfNeeded(fund).then(() => {
+                    if (main0.classList.contains('overview-mode')) renderFundOverview();
+                });
+                return;
+            }
+            if (main0.classList.contains('summary-mode')) {
+                renderSummaryView();
+                ensureHistoryForPositionIfNeeded(fund).then(() => {
+                    if (main0.classList.contains('summary-mode')) renderSummaryView();
+                });
+            }
         }
 
         function updateAllPositionSummary() {
@@ -4617,6 +4736,8 @@
             const mainContent = document.querySelector('.main-content');
             if (mainContent && mainContent.classList.contains('overview-mode')) {
                 renderFundOverview();
+            } else if (mainContent && mainContent.classList.contains('summary-mode')) {
+                renderSummaryView();
             }
 
             showToast(`已添加 ${fund.name || fund.code || code}`);
@@ -4633,11 +4754,14 @@
 
             const mainContent = document.querySelector('.main-content');
             const inOverview = !!(mainContent && mainContent.classList.contains('overview-mode'));
+            const inSummary = !!(mainContent && mainContent.classList.contains('summary-mode'));
 
             if (selectedFund?.code === code) selectedFund = funds[0] || null;
             renderFundList();
             if (inOverview) {
                 renderFundOverview();
+            } else if (inSummary) {
+                renderSummaryView();
             } else {
                 if (selectedFund) selectFund(selectedFund);
             }
@@ -4668,7 +4792,10 @@
             
             // 切换到详情视图
             const mainContent = document.querySelector('.main-content');
-            if (mainContent) mainContent.classList.remove('overview-mode');
+            if (mainContent) {
+                mainContent.classList.remove('overview-mode');
+                mainContent.classList.remove('summary-mode');
+            }
             
             // 移动端：进入详情视图时显示概览按钮
             if (window.innerWidth <= 768) {
@@ -4898,6 +5025,10 @@
             const card = e.target.closest('.overview-card');
             if (!card) return;
             if (e.target.closest('.overview-card-actions')) return;
+            if (card.classList.contains('overview-summary-card')) {
+                showSummaryMode();
+                return;
+            }
             const code = card.dataset.code;
             if (code) selectFundFromOverview(code);
         }
@@ -4907,10 +5038,285 @@
             if (fund) selectFund(fund);
         }
 
+        let summarySortKey = 'profit_desc';
+        let _summaryTagsHtmlCache = '';
+        let _summaryTagsKeyCache = '';
+
+        function setSummarySort(key) {
+            summarySortKey = key || 'profit_desc';
+            const main = document.querySelector('.main-content');
+            if (main && main.classList.contains('summary-mode')) renderSummaryView();
+        }
+
+        function showSummaryMode() {
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.classList.add('summary-mode');
+                mainContent.classList.remove('overview-mode');
+            }
+
+            const mobileOverviewBtn = document.getElementById('mobileOverviewBtn');
+            if (mobileOverviewBtn) mobileOverviewBtn.style.display = '';
+
+            const sel = document.getElementById('summarySort');
+            if (sel) sel.value = summarySortKey;
+            renderSummaryView();
+            fetchSummaryHitokoto();
+        }
+
+        let _summaryHitokotoCache = { text: '', from: '', at: 0 };
+        async function fetchSummaryHitokoto() {
+            const now = Date.now();
+            if (_summaryHitokotoCache && _summaryHitokotoCache.text && (now - _summaryHitokotoCache.at) < 10 * 60 * 1000) {
+                renderSummaryHitokoto(_summaryHitokotoCache.text, _summaryHitokotoCache.from);
+                return;
+            }
+            try {
+                const url = 'https://v1.hitokoto.cn/?c=i';
+                const json = await fetch(url, { cache: 'no-store' }).then(r => r.json());
+                const text = (json && json.hitokoto) ? String(json.hitokoto) : '';
+                const from = (json && json.from) ? String(json.from) : '';
+                if (text) {
+                    _summaryHitokotoCache = { text, from, at: now };
+                    renderSummaryHitokoto(text, from);
+                }
+            } catch (e) {
+            }
+        }
+
+        function renderSummaryHitokoto(text, from) {
+            const wrap = document.getElementById('summaryQuoteWrap');
+            const textEl = document.getElementById('summaryQuoteText');
+            const fromEl = document.getElementById('summaryQuoteFrom');
+            if (!wrap || !textEl || !fromEl) return;
+            const t = (text || '').trim();
+            if (!t) return;
+            wrap.style.display = '';
+            textEl.textContent = t;
+            fromEl.textContent = from ? ('——' + from) : '——';
+        }
+
+        function renderSummaryView() {
+            const tbody = document.getElementById('summaryTableBody');
+            const tagsEl = document.getElementById('summaryTags');
+            const totalValueEl = document.getElementById('summaryTotalValue');
+            const totalProfitEl = document.getElementById('summaryTotalProfit');
+            const dailyProfitEl = document.getElementById('summaryDailyProfit');
+            if (!tbody || !tagsEl || !totalValueEl || !totalProfitEl || !dailyProfitEl) return;
+
+            const calcHoldingDays = (fund) => {
+                const buys = getFundBuys(fund);
+                if (!Array.isArray(buys) || buys.length === 0) return NaN;
+                let first = '';
+                for (const b of buys) {
+                    const d = (b?.date || '').toString();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+                    if (!first || d < first) first = d;
+                }
+                if (!first) return NaN;
+                const tp = getShanghaiTimeParts();
+                const todayStr = `${tp.year}-${String(tp.month).padStart(2,'0')}-${String(tp.day).padStart(2,'0')}`;
+                const start = new Date(first + 'T00:00:00');
+                const end = new Date(todayStr + 'T00:00:00');
+                const diff = Math.floor((end - start) / (24 * 60 * 60 * 1000));
+                return diff >= 0 ? (diff + 1) : NaN;
+            };
+
+            const rows = [];
+            let totalValue = 0;
+            let totalProfit = 0;
+            let totalDailyProfit = 0;
+
+            let topFav = null;
+            let topProfit = null;
+            let worstLoss = null;
+
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const pos = getPosition(f);
+                if (!pos || !pos.has) continue;
+
+                const nav0 = parseFloat(f.currentNav);
+                if (!Number.isFinite(nav0) || nav0 <= 0) continue;
+
+                const m = calcPositionMetrics(pos, nav0);
+                if (!m || !m.ok) continue;
+
+                const dp = calcDailyProfitForFund(f);
+                const dailyProfit0 = (dp && dp.ok) ? (Number(dp.dailyProfit) || 0) : NaN;
+
+                const profit0 = Number(m.profit) || 0;
+                const profitPct0 = Number(m.profitPct);
+                const value0 = Number(m.value) || 0;
+
+                totalValue += value0;
+                totalProfit += profit0;
+                if (Number.isFinite(dailyProfit0)) totalDailyProfit += dailyProfit0;
+
+                const pb = getPositionFromBuy(f);
+                const favScore0 = pb && pb.has ? (Number(pb.totalBuyAmount) || 0) : 0;
+
+                if (!topFav || favScore0 > topFav.score) topFav = { fund: f, score: favScore0 };
+                if (!topProfit || profit0 > topProfit.value) topProfit = { fund: f, value: profit0 };
+                if (!worstLoss || profit0 < worstLoss.value) worstLoss = { fund: f, value: profit0 };
+
+                const holdingDays0 = calcHoldingDays(f);
+
+                rows.push({
+                    fund: f,
+                    value: value0,
+                    holdingDays: holdingDays0,
+                    profit: profit0,
+                    profitPct: profitPct0,
+                    dailyProfit: dailyProfit0
+                });
+            }
+
+            const clsTotalProfit = totalProfit >= 0 ? 'positive' : 'negative';
+            const clsDailyProfit = totalDailyProfit >= 0 ? 'positive' : 'negative';
+            totalValueEl.textContent = Number.isFinite(totalValue) ? ('¥' + totalValue.toFixed(2)) : '--';
+            totalProfitEl.textContent = Number.isFinite(totalProfit) ? ('¥' + totalProfit.toFixed(2)) : '--';
+            totalProfitEl.className = `summary-metric-value ${clsTotalProfit}`;
+            dailyProfitEl.textContent = Number.isFinite(totalDailyProfit) ? ('¥' + totalDailyProfit.toFixed(2)) : '--';
+            dailyProfitEl.className = `summary-metric-value ${clsDailyProfit}`;
+
+            // tags：单行滚动展示
+            const tags = [];
+
+            // 原有标签
+            if (topFav && topFav.fund) tags.push(`<span class="summary-tag"><span class="icon">⭐</span><span>最钟爱</span><b>${topFav.fund.name || topFav.fund.code}</b></span>`);
+            if (topProfit && topProfit.fund) tags.push(`<span class="summary-tag"><span class="icon">🚀</span><span>贡献最高</span><b>${topProfit.fund.name || topProfit.fund.code}</b></span>`);
+            if (worstLoss && worstLoss.fund) tags.push(`<span class="summary-tag"><span class="icon">🧊</span><span>亏损最大</span><b>${worstLoss.fund.name || worstLoss.fund.code}</b></span>`);
+
+            // 今日最佳/最差：基于 dayGrowth（涨跌幅）
+            let bestToday = null;
+            let worstToday = null;
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const pct = parseFloat(String(f?.dayGrowth ?? '').replace('%', ''));
+                if (!Number.isFinite(pct)) continue;
+                if (!bestToday || pct > bestToday.pct) bestToday = { fund: f, pct };
+                if (!worstToday || pct < worstToday.pct) worstToday = { fund: f, pct };
+            }
+            if (bestToday?.fund) tags.push(`<span class="summary-tag"><span class="icon">🥇</span><span>今日最佳</span><b>${bestToday.fund.name || bestToday.fund.code}</b></span>`);
+            if (worstToday?.fund) tags.push(`<span class="summary-tag"><span class="icon">🥉</span><span>今日最差</span><b>${worstToday.fund.name || worstToday.fund.code}</b></span>`);
+
+            // 近期黑马：近7天涨幅最佳（依赖 historyCache）
+            let best7d = null;
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const raw = historyCache[f?.code];
+                if (!Array.isArray(raw) || raw.length < 8) continue;
+                const last = raw[raw.length - 1];
+                const prev = raw[raw.length - 8];
+                const lastY = Number(last?.y);
+                const prevY = Number(prev?.y);
+                if (!Number.isFinite(lastY) || !Number.isFinite(prevY) || prevY === 0) continue;
+                const pct7 = (lastY - prevY) / prevY * 100;
+                if (!Number.isFinite(pct7)) continue;
+                if (!best7d || pct7 > best7d.pct) best7d = { fund: f, pct: pct7 };
+            }
+            if (best7d?.fund) tags.push(`<span class="summary-tag"><span class="icon">🐎</span><span>近期黑马</span><b>${best7d.fund.name || best7d.fund.code}</b></span>`);
+
+            // 回暖中：连续上涨（依赖 historyCache）
+            let warming = null;
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const st = calculateStreakData(f);
+                if (!st || !st.currentIsUp) continue;
+                const streak = Number(st.currentStreak) || 0;
+                if (streak <= 1) continue;
+                if (!warming || streak > warming.streak) warming = { fund: f, streak };
+            }
+            if (warming?.fund) tags.push(`<span class="summary-tag"><span class="icon">🌤</span><span>回暖中</span><b>${warming.fund.name || warming.fund.code}</b></span>`);
+
+            // 新进成员：最近一次买入日期最新（依赖 buys）
+            let newest = null;
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const buys = getFundBuys(f);
+                if (!Array.isArray(buys) || buys.length === 0) continue;
+                let latestDate = '';
+                for (const b of buys) {
+                    const d = (b?.date || '').toString();
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d > latestDate) latestDate = d;
+                }
+                if (!latestDate) continue;
+                if (!newest || latestDate > newest.date) newest = { fund: f, date: latestDate };
+            }
+            if (newest?.fund) tags.push(`<span class="summary-tag"><span class="icon">🆕</span><span>新进成员</span><b>${newest.fund.name || newest.fund.code}</b></span>`);
+
+            const tagsKey = tags.join('');
+            if (!tagsKey) {
+                if (_summaryTagsHtmlCache) {
+                    tagsEl.innerHTML = '';
+                    _summaryTagsHtmlCache = '';
+                    _summaryTagsKeyCache = '';
+                }
+            } else {
+                if (tagsKey !== _summaryTagsKeyCache) {
+                    // 仅在标签集合变化时随机洗牌一次，避免频繁重绘导致弹幕卡顿
+                    for (let i = tags.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        const tmp = tags[i];
+                        tags[i] = tags[j];
+                        tags[j] = tmp;
+                    }
+                    _summaryTagsKeyCache = tagsKey;
+                    _summaryTagsHtmlCache = tags.join('');
+                    tagsEl.innerHTML = `<div class="summary-tags-marquee"><div class="summary-tags-track">${_summaryTagsHtmlCache}</div><div class="summary-tags-track" aria-hidden="true">${_summaryTagsHtmlCache}</div></div>`;
+                }
+            }
+
+            const sortKey = String(summarySortKey || 'profit_desc');
+            const key = sortKey.startsWith('profitPct') ? 'profitPct' : 'profit';
+            const dir = sortKey.endsWith('_asc') ? 1 : -1;
+            rows.sort((a, b) => {
+                const av = Number(a[key]);
+                const bv = Number(b[key]);
+                if (!Number.isFinite(av) && !Number.isFinite(bv)) return 0;
+                if (!Number.isFinite(av)) return 1;
+                if (!Number.isFinite(bv)) return -1;
+                return (av - bv) * dir;
+            });
+
+            if (rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="summary-empty">暂无持仓</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = rows.map(r => {
+                const name = r.fund?.name || r.fund?.code || '--';
+                const code = r.fund?.code || '';
+                const profitCls = r.profit >= 0 ? 'positive' : 'negative';
+                const dailyCls = Number.isFinite(r.dailyProfit) ? (r.dailyProfit >= 0 ? 'positive' : 'negative') : '';
+                const pctCls = Number.isFinite(r.profitPct) ? (r.profitPct >= 0 ? 'positive' : 'negative') : '';
+                const profitPctStr = Number.isFinite(r.profitPct) ? ((r.profitPct >= 0 ? '+' : '') + r.profitPct.toFixed(2) + '%') : '--';
+                const dailyStr = Number.isFinite(r.dailyProfit) ? ('¥' + r.dailyProfit.toFixed(2)) : '--';
+                const holdingDaysStr = Number.isFinite(r.holdingDays) ? String(Math.round(r.holdingDays)) : '--';
+
+                return `
+                    <tr class="summary-row" data-code="${code}">
+                        <td><div style="font-weight:900;">${name}</div><div class="mono" style="color:var(--gray-500); font-size:0.75rem;">${code}</div></td>
+                        <td class="mono">¥${r.value.toFixed(2)}</td>
+                        <td class="mono ${profitCls}">¥${r.profit.toFixed(2)}</td>
+                        <td class="mono ${pctCls}">${profitPctStr}</td>
+                        <td class="mono ${dailyCls}">${dailyStr}</td>
+                        <td class="mono">${holdingDaysStr}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.querySelectorAll('tr.summary-row[data-code]').forEach(tr => {
+                tr.addEventListener('click', () => {
+                    const code = tr.getAttribute('data-code');
+                    if (code) selectFundFromOverview(code);
+                });
+            });
+        }
+
         // 返回概览视图
         function showOverviewMode() {
             const mainContent = document.querySelector('.main-content');
-            if (mainContent) mainContent.classList.add('overview-mode');
+            if (mainContent) {
+                mainContent.classList.add('overview-mode');
+                mainContent.classList.remove('summary-mode');
+            }
             
             // 移动端：进入概览模式时隐藏概览按钮
             const mobileOverviewBtn = document.getElementById('mobileOverviewBtn');
@@ -4983,7 +5389,12 @@
 
                 saveFunds();
                 renderFundList();
-                renderFundOverview();
+                const main0 = document.querySelector('.main-content');
+                if (main0 && main0.classList.contains('summary-mode')) {
+                    renderSummaryView();
+                } else {
+                    renderFundOverview();
+                }
                 if (!fromInit) showToast('所有基金数据已刷新');
             } catch (error) {
                 console.error('刷新失败:', error);
@@ -6214,6 +6625,8 @@
                         const mainContent = document.querySelector('.main-content');
                         if (mainContent && mainContent.classList.contains('overview-mode')) {
                             renderFundOverview();
+                        } else if (mainContent && mainContent.classList.contains('summary-mode')) {
+                            renderSummaryView();
                         }
                         if (selectedFund?.code === f.code) {
                             selectedFund = f;
@@ -6246,6 +6659,7 @@
                                 renderFundList();
                                 const main0 = document.querySelector('.main-content');
                                 if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
+                                if (main0 && main0.classList.contains('summary-mode')) renderSummaryView();
                                 if (selectedFund?.code === f.code) updateMainDisplay(selectedFund);
                             }, 50);
                             return;
@@ -6263,6 +6677,11 @@
                                 setTimeout(() => {
                                     const main2 = document.querySelector('.main-content');
                                     if (main2 && main2.classList.contains('overview-mode')) renderFundOverview();
+                                }, 60);
+                            } else if (mainContent && mainContent.classList.contains('summary-mode')) {
+                                setTimeout(() => {
+                                    const main2 = document.querySelector('.main-content');
+                                    if (main2 && main2.classList.contains('summary-mode')) renderSummaryView();
                                 }, 60);
                             }
                             return;
