@@ -2322,6 +2322,12 @@
         function updateSourceIndicator(sourceName) { lastSuccessfulSource = sourceName; const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
 
         window.addEventListener('DOMContentLoaded', () => { 
+            console.log(
+                '%cHigher%c | %c9880699@gmail.com',
+                'background:#2563eb;color:#ffffff;font-weight:700;padding:2px 6px;border-radius:6px;',
+                'color:#6b7280;font-weight:600;',
+                'background:#ec4899;color:#ffffff;font-weight:700;padding:2px 6px;border-radius:6px;'
+            );
             initChart(); 
             renderFundList(); 
             fetchMarketIndices(false); 
@@ -3380,161 +3386,39 @@
                 : (Number.isFinite(officialNav0) ? officialNav0 : profitNav);
             const pos = getPosition(fund);
 
-            // 当日盈亏模式：优先用“官方历史净值差分 * 前一披露日份额”展示
-            // 即使用户在最新披露日做了卖出（导致当前持仓份额下降或清仓），当日盈亏也应按前一披露日份额计算，且不应依赖实时估值。
+            // 当日盈亏：与概览页共用同一计算口径（calcDailyProfitForFund），避免卖出后按“剩余金额”导致不一致。
             if (showDailyProfit) {
-                const raw0 = historyCache[fund.code];
-                const hasHistory0 = Array.isArray(raw0) && raw0.length >= 2;
-                const last0 = hasHistory0 ? raw0[raw0.length - 1] : null;
-                const prev0 = hasHistory0 ? raw0[raw0.length - 2] : null;
-                const lastNav0 = last0 ? Number(last0.y) : NaN;
-                const prevNav0 = prev0 ? Number(prev0.y) : NaN;
-                const prevDate0 = prev0 ? tsToDateStr(prev0.x) : '';
-
-                if (Number.isFinite(lastNav0) && lastNav0 > 0 && Number.isFinite(prevNav0) && prevNav0 > 0 && prevDate0) {
-                    const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate0);
-                    if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
-                        const dailyProfit0 = (lastNav0 - prevNav0) * sharesPrev0;
-                        document.getElementById('totalProfit').textContent = '¥' + dailyProfit0.toFixed(2);
-                        document.getElementById('totalProfit').className = `stat-value ${dailyProfit0>=0?'positive':'negative'}`;
-                        const ppEl0 = document.getElementById('profitPercent');
-                        ppEl0.innerHTML = '持仓金额 ¥' + (lastNav0 * sharesPrev0).toFixed(2) + ' <span class="day-growth-source official">官方</span>';
-                        ppEl0.className = 'stat-change';
-                        ppEl0.style.color = '';
-                        const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                        if (profitCard0) profitCard0.textContent = '当日盈亏';
-                        return;
-                    }
+                const dp = calcDailyProfitForFund(fund);
+                if (dp && dp.ok) {
+                    const dailyProfit0 = Number(dp.dailyProfit) || 0;
+                    const todayValue0 = Number(dp.todayValue);
+                    document.getElementById('totalProfit').textContent = '¥' + dailyProfit0.toFixed(2);
+                    document.getElementById('totalProfit').className = `stat-value ${dailyProfit0>=0?'positive':'negative'}`;
+                    const ppEl0 = document.getElementById('profitPercent');
+                    ppEl0.textContent = '持仓金额 ¥' + (Number.isFinite(todayValue0) ? todayValue0.toFixed(2) : '--');
+                    ppEl0.className = 'stat-change';
+                    ppEl0.style.color = '';
+                    const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                    if (profitCard0) profitCard0.textContent = '当日盈亏';
+                } else {
+                    document.getElementById('totalProfit').textContent = '--';
+                    document.getElementById('totalProfit').className = 'stat-value';
+                    const ppEl0 = document.getElementById('profitPercent');
+                    ppEl0.textContent = '持仓金额 --';
+                    ppEl0.className = 'stat-change';
+                    ppEl0.style.color = '#000';
+                    const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                    if (profitCard0) profitCard0.textContent = '当日盈亏';
                 }
+                return;
             }
             if (pos.has && Number.isFinite(navForPositionMetrics)) {
                 const m = calcPositionMetrics(pos, navForPositionMetrics);
                 if (m.ok) {
-                    const dayGrowth = parseFloat(fund.dayGrowth);
                     const todayValue = Number(m.value) || 0;
 
-                    // showDailyProfit：当日盈亏（优先用“官方历史净值差分 * 昨日份额”）
-                    // 否则：持仓收益
-                    if (showDailyProfit) {
-                        let prevValue = todayValue;
-                        let dailyProfit = 0;
-                        let dailyProfitSource = '';
-
-                        const raw = historyCache[fund.code];
-                        const hasHistory = Array.isArray(raw) && raw.length >= 1;
-                        const last = hasHistory ? raw[raw.length - 1] : null;
-                        const prev = (Array.isArray(raw) && raw.length >= 2) ? raw[raw.length - 2] : null;
-
-                        const lastNav = last ? Number(last.y) : NaN;
-                        const lastDate = last ? tsToDateStr(last.x) : '';
-                        const prevNav = prev ? Number(prev.y) : NaN;
-                        const prevDate = prev ? tsToDateStr(prev.x) : '';
-
-                        // 规则：
-                        // - 今日已披露官方净值：用(今日官方-昨日官方)*昨日份额
-                        // - 今日未披露：若有今日估算净值，用(今日估算-最新官方)*最新官方日份额
-                        const shNow = getShanghaiTimeParts();
-                        const todayStr = `${shNow.year}-${String(shNow.month).padStart(2,'0')}-${String(shNow.day).padStart(2,'0')}`;
-                        const navDateStr = getDateStr(fund.navDate);
-
-                        let todayNavToUse = NaN;
-                        let baseNav = NaN;
-                        let baseDate = '';
-
-                        if (navDateStr === todayStr && Number.isFinite(officialNav0) && officialNav0 > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
-                            todayNavToUse = officialNav0;
-                            baseNav = prevNav;
-                            baseDate = prevDate;
-                            dailyProfitSource = 'official';
-                        } else {
-                            const estDateStr = getDateStr(fund.estimatedTime);
-                            const estNav = Number(fund.estimatedNav);
-                            if (estDateStr === todayStr && Number.isFinite(estNav) && estNav > 0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
-                                todayNavToUse = estNav;
-                                baseNav = lastNav;
-                                baseDate = lastDate;
-                                dailyProfitSource = 'est';
-                            }
-                        }
-
-                        // 今日未披露且无今日估算：用“最新两天官方历史净值差分”展示上一披露日的当日盈亏
-                        // 场景：次日凌晨/盘前（今天 != 最新披露日）时，仍应显示上一披露日的当日盈亏，不应因卖出记录导致回退口径偏差
-                        if (!dailyProfitSource && Number.isFinite(lastNav) && lastNav > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate && lastDate) {
-                            todayNavToUse = lastNav;
-                            baseNav = prevNav;
-                            baseDate = prevDate;
-                            dailyProfitSource = 'official';
-                        }
-
-                        if (Number.isFinite(todayNavToUse) && todayNavToUse > 0 && Number.isFinite(baseNav) && baseNav > 0 && baseDate) {
-                            const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, baseDate);
-                            if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
-                                prevValue = baseNav * sharesPrev0;
-                                dailyProfit = (todayNavToUse - baseNav) * sharesPrev0;
-                            } else {
-                                dailyProfitSource = '';
-                            }
-                        }
-
-                        // 买入当日：首次建仓时当日盈亏应为0（即使今日已披露官方净值，也从次日开始计收益）
-                        {
-                            const buys0 = getFundBuys(fund);
-                            const sells0 = getFundSells(fund);
-                            if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
-                                const todayBuyEff = buys0.some(b => {
-                                    const bp = getFirstHistoryPointOnOrAfter(fund.code, b.date);
-                                    return bp && bp.date === todayStr;
-                                });
-                                if (todayBuyEff) {
-                                    const prevShares0 = baseDate ? calcSharesAsOfDate(fund.code, fund, baseDate) : 0;
-                                    if (!(Number.isFinite(prevShares0) && prevShares0 > 0)) {
-                                        dailyProfit = 0;
-                                        prevValue = todayValue;
-                                        dailyProfitSource = 'prebuy';
-                                    }
-                                }
-                            }
-                        }
-
-                        // 回退：若无法用历史净值差分，则用 dayGrowth 反推
-                        if (!dailyProfitSource) {
-                            const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
-                            if (src0 === 'est') {
-                                const mBase = calcPositionMetricsOfficialT2FromBuys(fund);
-                                const baseValue = (mBase && mBase.ok) ? Number(mBase.value) : todayValue;
-                                prevValue = Number.isFinite(baseValue) ? baseValue : todayValue;
-                                dailyProfit = (Number.isFinite(dayGrowth) && Number.isFinite(prevValue)) ? (prevValue * dayGrowth / 100) : 0;
-                                dailyProfitSource = 'est';
-                            } else {
-                                if (Number.isFinite(dayGrowth) && Number.isFinite(todayValue) && Math.abs(dayGrowth) < 50) {
-                                    const k = 1 + dayGrowth / 100;
-                                    if (k !== 0) prevValue = todayValue / k;
-                                }
-                                dailyProfit = todayValue - prevValue;
-                                dailyProfitSource = src0 || '';
-                            }
-                        }
-
-                        document.getElementById('totalProfit').textContent = '¥' + dailyProfit.toFixed(2);
-                        document.getElementById('totalProfit').className = `stat-value ${dailyProfit>=0?'positive':'negative'}`;
-
-                        const ppEl = document.getElementById('profitPercent');
-                        const src0 = dailyProfitSource || ((fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '');
-                        const srcTag = (src0 === 'est')
-                            ? ' <span class="day-growth-source est">估算</span>'
-                            : (src0 === 'official')
-                                ? ' <span class="day-growth-source official">官方</span>'
-                                : '';
-                        const valueSync = (Number.isFinite(officialNav0) && officialNav0 > 0 && Number.isFinite(pos?.shares) && pos.shares > 0)
-                            ? (Number(pos.shares) * officialNav0)
-                            : todayValue;
-                        ppEl.innerHTML = '持仓金额 ¥' + Number(valueSync || 0).toFixed(2) + srcTag;
-                        ppEl.className = 'stat-change';
-                        ppEl.style.color = '';
-
-                        const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                        if (profitCard) profitCard.textContent = '当日盈亏';
-                    } else {
+                    // 持仓收益
+                    {
                         document.getElementById('totalProfit').textContent = '¥' + m.profit.toFixed(2);
                         document.getElementById('totalProfit').className = `stat-value ${m.profit>=0?'positive':'negative'}`;
                         const ppEl = document.getElementById('profitPercent');
@@ -4453,6 +4337,8 @@
 
             let invested = 0;
             let shares = 0;
+            let realizedProfit = 0;
+            let totalBuyAmount = 0;
             const pending = [];
 
             const txs = [];
@@ -4480,6 +4366,7 @@
                     if (!Number.isFinite(sh0) || sh0 <= 0) continue;
                     shares += sh0;
                     invested += tx.amount;
+                    totalBuyAmount += tx.amount;
                 } else {
                     if (shares <= 0) continue;
                     const avgCost = invested > 0 ? (invested / shares) : 0;
@@ -4488,6 +4375,10 @@
                     else sellShares = tx.amount / tx.nav;
                     if (!Number.isFinite(sellShares) || sellShares <= 0) continue;
                     sellShares = Math.min(sellShares, shares);
+
+                    const proceeds = sellShares * tx.nav;
+                    realizedProfit += proceeds - (avgCost * sellShares);
+
                     shares -= sellShares;
                     invested -= avgCost * sellShares;
                     if (shares <= 0.00000001) { shares = 0; invested = 0; }
@@ -4496,7 +4387,7 @@
             }
 
             if (shares <= 0 || invested <= 0) return { has: false, pendingBuys: pending };
-            return { has: true, invested, shares, pendingBuys: pending };
+            return { has: true, invested, shares, realizedProfit, totalBuyAmount, pendingBuys: pending };
         }
 
         function getPositionFromLegacy(fund) {
@@ -4520,14 +4411,38 @@
             if (!Number.isFinite(invested) || invested <= 0 || !Number.isFinite(shares) || shares <= 0) return { ok: false };
 
             const value = shares * nav;
-            const profit = value - invested;
-            const profitPct = invested ? (profit / invested * 100) : NaN;
+            const realizedProfit = Number(pos.realizedProfit) || 0;
+            const profit = (value - invested) + realizedProfit;
+            const base0 = Number(pos.totalBuyAmount);
+            const base = (Number.isFinite(base0) && base0 > 0) ? base0 : invested;
+            const profitPct = base ? (profit / base * 100) : NaN;
             return { ok: true, invested, value, profit, profitPct };
         }
 
         function calcDailyProfitForFund(fund) {
             const pos = getPosition(fund);
             if (!pos || !pos.has) return { ok: false };
+
+            // 与详情页保持一致：若已有至少两天官方历史净值，优先用“最新两天差分 * 前一披露日份额”。
+            // 这样即使在最新披露日发生卖出，也不会把当日盈亏按卖出后的剩余金额缩小。
+            {
+                const raw0 = historyCache[fund.code];
+                const hasHistory0 = Array.isArray(raw0) && raw0.length >= 2;
+                const last0 = hasHistory0 ? raw0[raw0.length - 1] : null;
+                const prev0 = hasHistory0 ? raw0[raw0.length - 2] : null;
+                const lastNav0 = last0 ? Number(last0.y) : NaN;
+                const prevNav0 = prev0 ? Number(prev0.y) : NaN;
+                const prevDate0 = prev0 ? tsToDateStr(prev0.x) : '';
+                if (Number.isFinite(lastNav0) && lastNav0 > 0 && Number.isFinite(prevNav0) && prevNav0 > 0 && prevDate0) {
+                    const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate0);
+                    if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                        const dailyProfit0 = (lastNav0 - prevNav0) * sharesPrev0;
+                        const prevValue0 = prevNav0 * sharesPrev0;
+                        const todayValue0 = lastNav0 * sharesPrev0;
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                    }
+                }
+            }
 
             const status = getMarketStatus();
             const shProfit = getShanghaiTimeParts();
