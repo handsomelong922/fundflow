@@ -4663,7 +4663,7 @@
                     </div>
                 `;
                 // 更新统计卡片为空状态
-                updateOverviewStats({ totalCount: 0, holdingCount: 0, totalDailyProfit: 0, totalDailyReturnPct: NaN, latestUpdateText: '--' });
+                updateOverviewStats({ totalCount: 0, holdingCount: 0, totalDailyProfit: 0, totalDailyReturnPct: NaN, moodDayGrowthPct: NaN, latestUpdateText: '--' });
                 return;
             }
             
@@ -4671,8 +4671,10 @@
             let holdingCount = 0;
             let totalDailyProfit = 0;
             let totalPrevValue = 0;
-            let latestUpdateText = '--';
+            let allDayGrowthSum = 0;
+            let allDayGrowthCount = 0;
             let latestUpdateMin = -1;
+            let latestUpdateText = '--';
             
             // 使用 DocumentFragment 批量操作
             const fragment = document.createDocumentFragment();
@@ -4713,6 +4715,11 @@
                 const dayGrowth = getDisplayDayGrowth(fund);
                 const isPositive = dayGrowth >= 0;
                 const isOfficial0 = (fund && String(fund._dayGrowthSource || '') === 'official');
+
+                if (Number.isFinite(dayGrowth)) {
+                    allDayGrowthSum += dayGrowth;
+                    allDayGrowthCount++;
+                }
                 
                 // 格式化更新时间
                 const updateTime = fund.lastUpdateTime || '--';
@@ -4806,6 +4813,7 @@
                 holdingCount,
                 totalDailyProfit,
                 totalDailyReturnPct: (Number.isFinite(totalPrevValue) && totalPrevValue > 0) ? (totalDailyProfit / totalPrevValue * 100) : NaN,
+                moodDayGrowthPct: (allDayGrowthCount > 0) ? (allDayGrowthSum / allDayGrowthCount) : NaN,
                 latestUpdateText
             });
         }
@@ -4820,10 +4828,10 @@
             
             if (!holdingCountEl || !dailyReturnEl || !dailyProfitEl || !updateTimeEl) return;
             
-            const { totalCount, holdingCount, totalDailyProfit, totalDailyReturnPct, latestUpdateText } = stats;
+            const { totalCount, holdingCount, totalDailyProfit, totalDailyReturnPct, moodDayGrowthPct, latestUpdateText } = stats;
             
             // 持仓基金数量
-            holdingCountEl.textContent = holdingCount > 0 ? `${holdingCount}/${totalCount}` : '--';
+            holdingCountEl.textContent = Number.isFinite(totalCount) ? `${holdingCount}/${totalCount}` : '--';
             
             // 日收益率
             if (Number.isFinite(totalDailyReturnPct) && totalDailyReturnPct !== 0) {
@@ -4850,7 +4858,7 @@
                 moodProfitEl.textContent = (Number.isFinite(v) && v > 0.01) ? '🤑' : ((Number.isFinite(v) && v < -0.01) ? '😭' : '😶');
             }
             if (moodReturnEl) {
-                const r = Number(totalDailyReturnPct);
+                const r = Number(moodDayGrowthPct);
                 moodReturnEl.textContent = (Number.isFinite(r) && r > 0.01) ? '😄' : ((Number.isFinite(r) && r < -0.01) ? '😞' : '😐');
             }
         }
