@@ -5022,11 +5022,37 @@
             const fragment = document.createDocumentFragment();
             const tempDiv = document.createElement('div');
 
+            const sh0 = getShanghaiTimeParts();
+            const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+            const switchedToNewDay0 = (_autoResetDate === todayStr0) && isAfter915();
+            let overviewSummaryDayText0 = '今日';
+            if (!switchedToNewDay0) {
+                let prevOfficialDate0 = '';
+                for (const f0 of (Array.isArray(funds) ? funds : [])) {
+                    if (!f0) continue;
+                    const navDate0 = getDateStr(f0.navDate);
+                    if (navDate0 && navDate0 < todayStr0 && navDate0 > prevOfficialDate0) prevOfficialDate0 = navDate0;
+                    const offDate0 = (f0._officialDayGrowthDate || '').toString();
+                    if (offDate0 && offDate0 < todayStr0 && offDate0 > prevOfficialDate0) prevOfficialDate0 = offDate0;
+                    const bnDate0 = (f0._baiduNewestDayGrowthDate || '').toString();
+                    if (bnDate0 && bnDate0 < todayStr0 && bnDate0 > prevOfficialDate0) prevOfficialDate0 = bnDate0;
+                }
+                if (!prevOfficialDate0) {
+                    const d0 = new Date(`${todayStr0}T00:00:00+08:00`);
+                    d0.setDate(d0.getDate() - 1);
+                    const y0 = d0.getFullYear();
+                    const m0 = String(d0.getMonth() + 1).padStart(2, '0');
+                    const day0 = String(d0.getDate()).padStart(2, '0');
+                    prevOfficialDate0 = `${y0}-${m0}-${day0}`;
+                }
+                overviewSummaryDayText0 = prevOfficialDate0 ? prevOfficialDate0.slice(5) : '--';
+            }
+
             const summaryHtml = `
                 <div class="overview-card overview-summary-card">
                     <div class="overview-card-info">
                         <div class="overview-card-name">概览汇总</div>
-                        <div class="overview-card-code">今日</div>
+                        <div class="overview-card-code">${overviewSummaryDayText0}</div>
                     </div>
                     <div class="overview-card-metric">
                         <div class="overview-card-metric-label">持仓基金</div>
