@@ -3090,8 +3090,17 @@
         function getOfficialDayGrowthFromHistoryWithDate(fund) {
             const raw = historyCache[fund.code];
             if (!Array.isArray(raw) || raw.length < 2) return { chg: NaN, date: '' };
-            const prev = raw[raw.length - 2];
-            const last = raw[raw.length - 1];
+            // historyCache 原始顺序不保证稳定；这里统一按日期从旧到新排序后再计算
+            const hist = raw.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
+            const prev = hist[hist.length - 2];
+            const last = hist[hist.length - 1];
             const a = Number(prev?.y);
             const b = Number(last?.y);
             if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return { chg: NaN, date: '' };
@@ -4318,8 +4327,16 @@
 
 
         function getFirstHistoryPointOnOrAfter(code, dateStr) {
-            const all = historyCache[code];
-            if (!Array.isArray(all) || all.length === 0 || !dateStr) return null;
+            const all0 = historyCache[code];
+            if (!Array.isArray(all0) || all0.length === 0 || !dateStr) return null;
+            const all = all0.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
             for (let i = 0; i < all.length; i++) {
                 const d = tsToDateStr(all[i].x);
                 if (d >= dateStr) return { i, x: all[i].x, y: Number(all[i].y), date: d };
@@ -4328,8 +4345,16 @@
         }
 
         function getNextHistoryDate(code, dateStr) {
-            const all = historyCache[code];
-            if (!Array.isArray(all) || all.length === 0 || !dateStr) return '';
+            const all0 = historyCache[code];
+            if (!Array.isArray(all0) || all0.length === 0 || !dateStr) return '';
+            const all = all0.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
             for (let i = 0; i < all.length; i++) {
                 const d = tsToDateStr(all[i].x);
                 if (d > dateStr) return d;
@@ -4338,8 +4363,16 @@
         }
 
         function getLatestOfficialHistoryPoint(code) {
-            const all = historyCache[code];
-            if (!Array.isArray(all) || all.length === 0) return null;
+            const all0 = historyCache[code];
+            if (!Array.isArray(all0) || all0.length === 0) return null;
+            const all = all0.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
             const last = all[all.length - 1];
             const y = Number(last?.y);
             const x = last?.x;
@@ -4631,6 +4664,51 @@
             return { ok: true, invested, value, profit, profitPct };
         }
 
+        function calcDailyProfitAlignedWithHistoryTable(fund) {
+            if (!fund || !fund.code) return { ok: false };
+            const code = fund.code;
+            const raw0 = historyCache[code];
+            if (!Array.isArray(raw0) || raw0.length < 2) return { ok: false };
+
+            const all = raw0.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
+
+            const sh = getShanghaiTimeParts();
+            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+            const latestDate = all.length > 0 ? tsToDateStr(all[all.length - 1].x) : '';
+            const prevDate = all.length > 1 ? tsToDateStr(all[all.length - 2].x) : '';
+            const latestNav = Number(all[all.length - 1]?.y);
+            const prevNav = Number(all[all.length - 2]?.y);
+
+            const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+            const bnNav0 = Number(fund && fund._baiduNewestNav);
+            const bnDate = bnDate0 ? getDateStr(bnDate0) || bnDate0 : '';
+
+            // 与历史净值表插入逻辑一致：当 newest=今日 且历史未到今日，则 newest 作为“最新点”，历史最新作为“前一日点”
+            if (bnDate === todayStr && Number.isFinite(bnNav0) && bnNav0 > 0 && latestDate && latestDate < todayStr) {
+                const sharesPrev0 = calcSharesAsOfDate(code, fund, latestDate);
+                if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0 && Number.isFinite(latestNav) && latestNav > 0) {
+                    const dailyProfit0 = (bnNav0 - latestNav) * sharesPrev0;
+                    return { ok: true, dailyProfit: dailyProfit0 };
+                }
+                return { ok: false };
+            }
+
+            // 常规：用历史最新两天差分（对应表格顶部两行）
+            if (!latestDate || !prevDate) return { ok: false };
+            if (!Number.isFinite(latestNav) || latestNav <= 0 || !Number.isFinite(prevNav) || prevNav <= 0) return { ok: false };
+            const sharesPrev0 = calcSharesAsOfDate(code, fund, prevDate);
+            if (!Number.isFinite(sharesPrev0) || sharesPrev0 <= 0) return { ok: false };
+            const dailyProfit0 = (latestNav - prevNav) * sharesPrev0;
+            return { ok: true, dailyProfit: dailyProfit0 };
+        }
+
         function calcDailyProfitForFund(fund) {
             const pos = getPosition(fund);
             if (!pos || !pos.has) return { ok: false };
@@ -4659,11 +4737,29 @@
                 return { ok: false };
             }
 
+            // 已休市或已明确拿到“今日官方”（含 newest 作为今日官方补点）：当日盈亏必须与历史净值表同口径
+            if (!status.canRealtimeUpdate || hasTodayOfficial0 || ((getDateStr(fund && fund._baiduNewestDayGrowthDate) || (fund && fund._baiduNewestDayGrowthDate) || '') === todayStr)) {
+                const aligned = calcDailyProfitAlignedWithHistoryTable(fund);
+                if (aligned && aligned.ok) return { ok: true, dailyProfit: aligned.dailyProfit };
+            }
+
             // 准备历史净值（官方披露）
             const raw = historyCache[fund.code];
-            const hasHistory = Array.isArray(raw) && raw.length >= 1;
-            const last = hasHistory ? raw[raw.length - 1] : null;
-            const prev = (Array.isArray(raw) && raw.length >= 2) ? raw[raw.length - 2] : null;
+            const rawOk = Array.isArray(raw) && raw.length >= 1;
+            // historyCache 的原始顺序不保证稳定；这里统一按日期从旧到新排序后再取 last/prev
+            const hist = rawOk
+                ? raw.slice().sort((a, b) => {
+                    const ax = Number(a?.x);
+                    const bx = Number(b?.x);
+                    if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                    if (!Number.isFinite(ax)) return 1;
+                    if (!Number.isFinite(bx)) return -1;
+                    return ax - bx;
+                })
+                : null;
+            const hasHistory = Array.isArray(hist) && hist.length >= 1;
+            const last = hasHistory ? hist[hist.length - 1] : null;
+            const prev = (Array.isArray(hist) && hist.length >= 2) ? hist[hist.length - 2] : null;
             const lastNav = last ? Number(last.y) : NaN;
             const lastDate = last ? tsToDateStr(last.x) : '';
             const prevNav = prev ? Number(prev.y) : NaN;
@@ -4674,9 +4770,7 @@
                 const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
                     const dailyProfit0 = (officialNav0 - prevNav) * sharesPrev0;
-                    const prevValue0 = prevNav * sharesPrev0;
-                    const todayValue0 = officialNav0 * sharesPrev0;
-                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                    return { ok: true, dailyProfit: dailyProfit0 };
                 }
             }
 
@@ -4684,16 +4778,14 @@
             if ((isTrading0 || isMiddayBreak0) && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
-                    const prevValue0 = lastNav * sharesLast0;
-                    const dayGrowth0 = parseFloat(fund.dayGrowth);
+                    const dayGrowth0 = getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
+                        const prevValue0 = lastNav * sharesLast0;
                         const dailyProfit0 = prevValue0 * (dayGrowth0 / 100);
-                        const todayValue0 = prevValue0 + dailyProfit0;
-                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                        return { ok: true, dailyProfit: dailyProfit0 };
                     }
                     const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
-                    const todayValue0 = estNav0 * sharesLast0;
-                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                    return { ok: true, dailyProfit: dailyProfit0 };
                 }
             }
 
@@ -4703,11 +4795,10 @@
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
                     const baseValue0 = lastNav * sharesLast0;
-                    const dayGrowth0 = parseFloat(fund.dayGrowth);
+                    const dayGrowth0 = getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
                         const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
-                        const todayValue0 = baseValue0 + dailyProfit0;
-                        return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0, todayValue: todayValue0 };
+                        return { ok: true, dailyProfit: dailyProfit0 };
                     }
                 }
             }
@@ -4717,9 +4808,7 @@
                 const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
                     const dailyProfit0 = (lastNav - prevNav) * sharesPrev0;
-                    const prevValue0 = prevNav * sharesPrev0;
-                    const todayValue0 = lastNav * sharesPrev0;
-                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                    return { ok: true, dailyProfit: dailyProfit0 };
                 }
             }
 
@@ -6409,7 +6498,18 @@
 
         function appendHistoryTableRows() {
             const code = historyTableState.code;
-            const all = code ? historyCache[code] : null;
+            const allRaw = code ? historyCache[code] : null;
+            // historyCache 原始顺序不保证稳定；表格与计算统一按日期从旧到新排序
+            const all = (Array.isArray(allRaw) && allRaw.length > 0)
+                ? allRaw.slice().sort((a, b) => {
+                    const ax = Number(a?.x);
+                    const bx = Number(b?.x);
+                    if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                    if (!Number.isFinite(ax)) return 1;
+                    if (!Number.isFinite(bx)) return -1;
+                    return ax - bx;
+                })
+                : allRaw;
             const tbody = document.getElementById('historyTableBody');
             if (!tbody) return;
             if (!all || all.length === 0) {
@@ -6562,16 +6662,26 @@
                 if (!Array.isArray(raw) || raw.length === 0) throw new Error('Data_netWorthTrend 为空');
 
                 // 缓存全部数据（每条 {x: 时间戳, y: 净值}）
-                historyCache[code] = raw.map(item => ({ x: item.x, y: item.y }));
+                historyCache[code] = raw
+                    .map(item => ({ x: item.x, y: item.y }))
+                    .sort((a, b) => {
+                        const ax = Number(a?.x);
+                        const bx = Number(b?.x);
+                        if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                        if (!Number.isFinite(ax)) return 1;
+                        if (!Number.isFinite(bx)) return -1;
+                        return ax - bx;
+                    });
 
                 // 用最新一条同步净值
                 const fundRef = funds.find(f => f.code === code);
                 if (fundRef) {
-                    const latest = raw[raw.length - 1];
-                    const jzrq   = tsToDateStr(latest.x);
+                    const hist0 = historyCache[code];
+                    const latest = (Array.isArray(hist0) && hist0.length > 0) ? hist0[hist0.length - 1] : null;
+                    const jzrq   = latest ? tsToDateStr(latest.x) : '';
                     if (jzrq > (fundRef.navDate || '')) {
                         fundRef.navDate  = jzrq;
-                        fundRef.currentNav = latest.y;
+                        fundRef.currentNav = latest ? latest.y : fundRef.currentNav;
                         saveFunds();
                     }
                     if (selectedFund && selectedFund.code === code) {
