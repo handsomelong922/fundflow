@@ -13,14 +13,17 @@
         .app-container { display: flex; height: 100vh; position: relative; }
         
         /* 移动端菜单按钮 */
-        .mobile-menu-btn { display: none; position: fixed; top: 20px; left: 20px; z-index: 1001; width: 48px; height: 48px; background: white; border: 2px solid var(--gray-200); border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.1); flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+        .mobile-menu-btn,
+        .mobile-overview-btn { display: none; position: fixed; top: 20px; z-index: 1001; width: 48px; height: 48px; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.1); align-items: center; justify-content: center; transition: all 0.25s; }
+        .mobile-menu-btn { left: 20px; background: white; border: 2px solid var(--gray-200); flex-direction: column; gap: 4px; }
         .mobile-menu-btn span { width: 24px; height: 3px; background: var(--gray-700); border-radius: 2px; transition: all 0.3s; }
         .mobile-menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(6px, 6px); }
         .mobile-menu-btn.active span:nth-child(2) { opacity: 0; }
         .mobile-menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(6px, -6px); }
         
         /* 移动端概览按钮 */
-        .mobile-overview-btn { display: none; position: fixed; top: 20px; right: 20px; z-index: 1001; width: 48px; height: 48px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(59,130,246,0.4); color: white; font-size: 1.25rem; align-items: center; justify-content: center; transition: all 0.25s; }
+        .mobile-overview-btn { right: 20px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); border: 2px solid transparent; box-shadow: 0 4px 12px rgba(59,130,246,0.4); color: white; font-size: 1.25rem; }
+        .mobile-menu-btn:active,
         .mobile-overview-btn:active { transform: scale(0.95); }
         
         .sidebar { width: 420px; min-width: 280px; max-width: 600px; background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); border-right: 1px solid rgba(229, 229, 229, 0.6); display: flex; flex-direction: column; overflow: hidden; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.03); transition: width 0.3s, transform 0.3s; position: relative; }
@@ -2748,9 +2751,14 @@
             let moved = false;
             let tracking = false;
 
-            const minDx = 60;
-            const maxDy = 45;
-            const ratio = 1.2;
+            let dragEl = null;
+            let draggingHoriz = false;
+            let lastDx = 0;
+            let rafId = 0;
+
+            const minDx = 86;
+            const maxDy = 34;
+            const ratio = 1.45;
 
             function isMobile() {
                 try {
@@ -2787,6 +2795,38 @@
             function dismissHint() {
                 if (!hintEl) return;
                 hintEl.classList.remove('show');
+            }
+
+            function applyDragTransform(dx) {
+                if (!dragEl) return;
+                lastDx = dx;
+                if (rafId) return;
+                rafId = requestAnimationFrame(() => {
+                    rafId = 0;
+                    const damp = 0.22;
+                    const max = 38;
+                    const d = Math.max(-max, Math.min(max, lastDx * damp));
+                    dragEl.style.transition = 'none';
+                    dragEl.style.willChange = 'transform';
+                    dragEl.style.transform = `translate3d(${d.toFixed(2)}px,0,0)`;
+                });
+            }
+
+            function resetDragTransform() {
+                if (!dragEl) return;
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = 0;
+                }
+                dragEl.style.transition = 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1)';
+                dragEl.style.transform = 'translate3d(0,0,0)';
+                const el0 = dragEl;
+                const done = () => {
+                    el0.style.willChange = '';
+                    el0.style.transition = '';
+                    el0.removeEventListener('transitionend', done);
+                };
+                el0.addEventListener('transitionend', done);
             }
 
             function gotoDelta(delta) {
@@ -2892,6 +2932,9 @@
                 startY = t.clientY;
                 moved = false;
                 tracking = true;
+                draggingHoriz = false;
+                lastDx = 0;
+                dragEl = document.querySelector('.fund-detail-view');
             }, { passive: true, capture: true });
 
             root.addEventListener('touchmove', (e) => {
@@ -2901,21 +2944,37 @@
                 const dx = t.clientX - startX;
                 const dy = t.clientY - startY;
                 if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
-                if (Math.abs(dy) > Math.abs(dx) * ratio) {
-                    tracking = false;
+
+                if (!draggingHoriz) {
+                    if (Math.abs(dy) > Math.abs(dx) * ratio) {
+                        tracking = false;
+                        dragEl = null;
+                        return;
+                    }
+                    if (Math.abs(dx) > Math.abs(dy) * ratio && Math.abs(dx) > 10) {
+                        draggingHoriz = true;
+                    }
+                }
+
+                if (draggingHoriz) {
+                    applyDragTransform(dx);
                 }
             }, { passive: true, capture: true });
 
             root.addEventListener('touchend', (e) => {
-                if (!tracking || !moved) { tracking = false; return; }
-                if (!canHandle(e)) { tracking = false; return; }
+                if (!tracking) return;
+                const shouldTrySwipe = tracking && moved && draggingHoriz && canHandle(e);
                 const t = e.changedTouches && e.changedTouches[0];
-                if (!t) { tracking = false; return; }
+                if (!t) { tracking = false; dragEl = null; draggingHoriz = false; return; }
                 const dx = t.clientX - startX;
                 const dy = t.clientY - startY;
                 tracking = false;
 
-                handleSwipeEnd(dx, dy);
+                if (draggingHoriz) resetDragTransform();
+                dragEl = null;
+                draggingHoriz = false;
+
+                if (shouldTrySwipe) handleSwipeEnd(dx, dy);
             }, { passive: true, capture: true });
         }
 
