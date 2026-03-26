@@ -2761,6 +2761,8 @@
 
             function canHandle(e) {
                 if (!isMobile()) return false;
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent && (mainContent.classList.contains('overview-mode') || mainContent.classList.contains('summary-mode'))) return false;
                 if (sidebar?.classList.contains('open') || sidebarOverlay?.classList.contains('active')) return false;
                 const t = e?.target;
                 if (t && (t.closest('input') || t.closest('textarea') || t.closest('select') || t.closest('button') || t.closest('a'))) return false;
@@ -5696,7 +5698,8 @@
             if (baiduData.holdingDate) {
                 holdingDateLabel = ` <span style="font-size:0.7rem;color:var(--gray-500);font-weight:500;">(${baiduData.holdingDate})</span>`;
             }
-            document.querySelector('.table-header').innerHTML = `基金持仓（TOP 10）${holdingDateLabel}`;
+            const headerEl = document.querySelector('#holdingsSideCard .table-header');
+            if (headerEl) headerEl.innerHTML = `基金持仓（TOP 10）${holdingDateLabel}`;
 
             // 缓存当前 TOP10 列表，后续 updateHoldingsChgOnly 只更新涨跌幅
             fund._topHoldings = quotes.map(h => ({ code: h.code, name: h.name, ratio: h.ratio || 0 }));
