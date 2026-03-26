@@ -3574,8 +3574,8 @@
             if (navChangeEl) {
                 if (navDateStr0 === todayStr0) {
                     const raw = historyCache[fund.code];
-                    // 若 historyCache 也已更新到“今日官方净值”，则前日=倒数第2条；
-                    // 否则（例如今日净值来自 baiduNewest，但 historyCache 只到昨日），前日=最后一条。
+                    // 若 historyCache 也已更新到“今日官方净值”，则昨日=倒数第2条；
+                    // 否则（例如今日净值来自 baiduNewest，但 historyCache 只到昨日），昨日=最后一条。
                     const latestH = getLatestOfficialHistoryPoint(fund.code);
                     const hasTodayInHistory = !!(latestH && latestH.date === todayStr0);
                     const prev = Array.isArray(raw)
@@ -3586,10 +3586,10 @@
                     const prevNav = prev ? Number(prev.y) : NaN;
                     const prevDate = prev ? tsToDateStr(prev.x) : '';
                     if (Number.isFinite(prevNav)) {
-                        navChangeEl.textContent = `前日净值 ${prevNav.toFixed(4)}${prevDate ? `（${prevDate.slice(5)}）` : ''}`;
+                        navChangeEl.textContent = `昨日净值 ${prevNav.toFixed(4)}${prevDate ? `（${prevDate.slice(5)}）` : ''}`;
                         navChangeEl.className = 'stat-change';
                     } else {
-                        navChangeEl.textContent = '前日净值 --';
+                        navChangeEl.textContent = '昨日净值 --';
                         navChangeEl.className = 'stat-change';
                     }
                 } else if (navDateStr0) {
