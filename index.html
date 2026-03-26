@@ -4694,8 +4694,9 @@
             if (bnDate === todayStr && Number.isFinite(bnNav0) && bnNav0 > 0 && latestDate && latestDate < todayStr) {
                 const sharesPrev0 = calcSharesAsOfDate(code, fund, latestDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0 && Number.isFinite(latestNav) && latestNav > 0) {
+                    const prevValue0 = latestNav * sharesPrev0;
                     const dailyProfit0 = (bnNav0 - latestNav) * sharesPrev0;
-                    return { ok: true, dailyProfit: dailyProfit0 };
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                 }
                 return { ok: false };
             }
@@ -4705,8 +4706,9 @@
             if (!Number.isFinite(latestNav) || latestNav <= 0 || !Number.isFinite(prevNav) || prevNav <= 0) return { ok: false };
             const sharesPrev0 = calcSharesAsOfDate(code, fund, prevDate);
             if (!Number.isFinite(sharesPrev0) || sharesPrev0 <= 0) return { ok: false };
+            const prevValue0 = prevNav * sharesPrev0;
             const dailyProfit0 = (latestNav - prevNav) * sharesPrev0;
-            return { ok: true, dailyProfit: dailyProfit0 };
+            return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
         }
 
         function calcDailyProfitForFund(fund) {
@@ -4740,7 +4742,7 @@
             // 已休市或已明确拿到“今日官方”（含 newest 作为今日官方补点）：当日盈亏必须与历史净值表同口径
             if (!status.canRealtimeUpdate || hasTodayOfficial0 || ((getDateStr(fund && fund._baiduNewestDayGrowthDate) || (fund && fund._baiduNewestDayGrowthDate) || '') === todayStr)) {
                 const aligned = calcDailyProfitAlignedWithHistoryTable(fund);
-                if (aligned && aligned.ok) return { ok: true, dailyProfit: aligned.dailyProfit };
+                if (aligned && aligned.ok) return { ok: true, dailyProfit: aligned.dailyProfit, prevValue: aligned.prevValue };
             }
 
             // 准备历史净值（官方披露）
@@ -4769,8 +4771,9 @@
             if (hasTodayOfficial0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
                 const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                    const prevValue0 = prevNav * sharesPrev0;
                     const dailyProfit0 = (officialNav0 - prevNav) * sharesPrev0;
-                    return { ok: true, dailyProfit: dailyProfit0 };
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                 }
             }
 
@@ -4782,10 +4785,11 @@
                     if (Number.isFinite(dayGrowth0)) {
                         const prevValue0 = lastNav * sharesLast0;
                         const dailyProfit0 = prevValue0 * (dayGrowth0 / 100);
-                        return { ok: true, dailyProfit: dailyProfit0 };
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                     }
+                    const prevValue0 = lastNav * sharesLast0;
                     const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
-                    return { ok: true, dailyProfit: dailyProfit0 };
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                 }
             }
 
@@ -4798,7 +4802,7 @@
                     const dayGrowth0 = getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
                         const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
-                        return { ok: true, dailyProfit: dailyProfit0 };
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0 };
                     }
                 }
             }
@@ -4807,8 +4811,9 @@
             if (Number.isFinite(lastNav) && lastNav > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
                 const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                    const prevValue0 = prevNav * sharesPrev0;
                     const dailyProfit0 = (lastNav - prevNav) * sharesPrev0;
-                    return { ok: true, dailyProfit: dailyProfit0 };
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                 }
             }
 
@@ -5171,7 +5176,7 @@
             holdingCountEl.textContent = Number.isFinite(totalCount) ? `${holdingCount}/${totalCount}` : '--';
             
             // 日收益率
-            if (Number.isFinite(totalDailyReturnPct) && totalDailyReturnPct !== 0) {
+            if (Number.isFinite(totalDailyReturnPct)) {
                 dailyReturnEl.textContent = (totalDailyReturnPct >= 0 ? '+' : '') + totalDailyReturnPct.toFixed(2) + '%';
                 dailyReturnEl.className = `overview-card-metric-value ${totalDailyReturnPct >= 0 ? 'positive' : 'negative'}`;
             } else {
@@ -5360,29 +5365,39 @@
 
             // tags：单行滚动展示
             const tags = [];
+            const favScoreTop0 = topFav ? Number(topFav.score) : NaN;
+            const favHasAny0 = Number.isFinite(favScoreTop0) && favScoreTop0 > 0;
+
+            const holdingFunds0 = rows.map(r => r && r.fund).filter(Boolean);
+            const holdingCountForTags0 = holdingFunds0.length;
 
             // 原有标签
-            if (topFav && topFav.fund) tags.push(`<span class="summary-tag"><span class="icon">⭐</span><span>最钟爱</span><b>${topFav.fund.name || topFav.fund.code}</b></span>`);
-            if (topProfit && topProfit.fund) tags.push(`<span class="summary-tag"><span class="icon">🚀</span><span>贡献最高</span><b>${topProfit.fund.name || topProfit.fund.code}</b></span>`);
-            if (worstLoss && worstLoss.fund) tags.push(`<span class="summary-tag"><span class="icon">🧊</span><span>亏损最大</span><b>${worstLoss.fund.name || worstLoss.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && favHasAny0 && topFav && topFav.fund) tags.push(`<span class="summary-tag"><span class="icon">⭐</span><span>最钟爱</span><b>${topFav.fund.name || topFav.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && topProfit && topProfit.fund && Number.isFinite(Number(topProfit.value)) && Number(topProfit.value) > 0) tags.push(`<span class="summary-tag"><span class="icon">🚀</span><span>贡献最高</span><b>${topProfit.fund.name || topProfit.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && worstLoss && worstLoss.fund && Number.isFinite(Number(worstLoss.value)) && Number(worstLoss.value) < 0) tags.push(`<span class="summary-tag"><span class="icon">🧊</span><span>亏损最大</span><b>${worstLoss.fund.name || worstLoss.fund.code}</b></span>`);
 
             // 今日最佳/最差：基于 dayGrowth（涨跌幅）
             let bestToday = null;
             let worstToday = null;
-            for (const f of (Array.isArray(funds) ? funds : [])) {
+            let todayCandidateCount0 = 0;
+            for (const f of holdingFunds0) {
                 const pct = parseFloat(String(f?.dayGrowth ?? '').replace('%', ''));
                 if (!Number.isFinite(pct)) continue;
+                todayCandidateCount0++;
                 if (!bestToday || pct > bestToday.pct) bestToday = { fund: f, pct };
                 if (!worstToday || pct < worstToday.pct) worstToday = { fund: f, pct };
             }
-            if (bestToday?.fund) tags.push(`<span class="summary-tag"><span class="icon">🥇</span><span>今日最佳</span><b>${bestToday.fund.name || bestToday.fund.code}</b></span>`);
-            if (worstToday?.fund) tags.push(`<span class="summary-tag"><span class="icon">🥉</span><span>今日最差</span><b>${worstToday.fund.name || worstToday.fund.code}</b></span>`);
+            // 今日最佳/最差：需要至少 2 个候选才有“最佳/最差”的对比意义；正/负分别独立触发
+            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && bestToday?.fund && Number.isFinite(Number(bestToday.pct)) && Number(bestToday.pct) > 0) tags.push(`<span class="summary-tag"><span class="icon">🥇</span><span>今日最佳</span><b>${bestToday.fund.name || bestToday.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && worstToday?.fund && Number.isFinite(Number(worstToday.pct)) && Number(worstToday.pct) < 0) tags.push(`<span class="summary-tag"><span class="icon">🥉</span><span>今日最差</span><b>${worstToday.fund.name || worstToday.fund.code}</b></span>`);
 
             // 近期黑马：近7天涨幅最佳（依赖 historyCache）
             let best7d = null;
-            for (const f of (Array.isArray(funds) ? funds : [])) {
+            let best7dCandidateCount0 = 0;
+            for (const f of holdingFunds0) {
                 const raw = historyCache[f?.code];
                 if (!Array.isArray(raw) || raw.length < 8) continue;
+                best7dCandidateCount0++;
                 const last = raw[raw.length - 1];
                 const prev = raw[raw.length - 8];
                 const lastY = Number(last?.y);
@@ -5392,24 +5407,28 @@
                 if (!Number.isFinite(pct7)) continue;
                 if (!best7d || pct7 > best7d.pct) best7d = { fund: f, pct: pct7 };
             }
-            if (best7d?.fund) tags.push(`<span class="summary-tag"><span class="icon">🐎</span><span>近期黑马</span><b>${best7d.fund.name || best7d.fund.code}</b></span>`);
+            // 近期黑马：需要至少 2 个候选才有“黑马”的对比意义
+            if (holdingCountForTags0 >= 2 && best7dCandidateCount0 >= 2 && best7d?.fund && Number.isFinite(Number(best7d.pct)) && Number(best7d.pct) > 0) tags.push(`<span class="summary-tag"><span class="icon">🐎</span><span>近期黑马</span><b>${best7d.fund.name || best7d.fund.code}</b></span>`);
 
             // 回暖中：连续上涨（依赖 historyCache）
             let warming = null;
-            for (const f of (Array.isArray(funds) ? funds : [])) {
+            for (const f of holdingFunds0) {
                 const st = calculateStreakData(f);
                 if (!st || !st.currentIsUp) continue;
                 const streak = Number(st.currentStreak) || 0;
                 if (streak <= 1) continue;
                 if (!warming || streak > warming.streak) warming = { fund: f, streak };
             }
-            if (warming?.fund) tags.push(`<span class="summary-tag"><span class="icon">🌤</span><span>回暖中</span><b>${warming.fund.name || warming.fund.code}</b></span>`);
+            // 回暖中：连续上涨（至少 2 天），且至少有 2 只持仓基金才展示（避免单基金时“只剩一个标签”的错觉）
+            if (holdingCountForTags0 >= 2 && warming?.fund) tags.push(`<span class="summary-tag"><span class="icon">🌤</span><span>回暖中</span><b>${warming.fund.name || warming.fund.code}</b></span>`);
 
             // 新进成员：最近一次买入日期最新（依赖 buys）
             let newest = null;
-            for (const f of (Array.isArray(funds) ? funds : [])) {
+            let newestCandidateCount0 = 0;
+            for (const f of holdingFunds0) {
                 const buys = getFundBuys(f);
                 if (!Array.isArray(buys) || buys.length === 0) continue;
+                newestCandidateCount0++;
                 let latestDate = '';
                 for (const b of buys) {
                     const d = (b?.date || '').toString();
@@ -5418,16 +5437,19 @@
                 if (!latestDate) continue;
                 if (!newest || latestDate > newest.date) newest = { fund: f, date: latestDate };
             }
-            if (newest?.fund) tags.push(`<span class="summary-tag"><span class="icon">🆕</span><span>新进成员</span><b>${newest.fund.name || newest.fund.code}</b></span>`);
+            // 新进成员：至少 2 个候选才展示（否则没有“新进”对比意义）
+            if (holdingCountForTags0 >= 2 && newestCandidateCount0 >= 2 && newest?.fund) tags.push(`<span class="summary-tag"><span class="icon">🆕</span><span>新进成员</span><b>${newest.fund.name || newest.fund.code}</b></span>`);
 
             const tagsKey = tags.join('');
             if (!tagsKey) {
+                tagsEl.style.display = 'none';
                 if (_summaryTagsHtmlCache) {
                     tagsEl.innerHTML = '';
                     _summaryTagsHtmlCache = '';
                     _summaryTagsKeyCache = '';
                 }
             } else {
+                tagsEl.style.display = '';
                 if (tagsKey !== _summaryTagsKeyCache) {
                     // 仅在标签集合变化时随机洗牌一次，避免频繁重绘导致弹幕卡顿
                     for (let i = tags.length - 1; i > 0; i--) {
