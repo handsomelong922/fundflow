@@ -328,12 +328,11 @@
         .sector-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; flex-shrink: 0; }
         .sector-tag { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-600); }
         .sector-tag.top10-weight { background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.22); color: var(--primary-dark); }
-        .sector-tag.positive { background: #fef2f2; border-color: #fee2e2; color: #dc2626; }
-        .sector-tag.negative { background: #ecfdf5; border-color: #d1fae5; color: #059669; }
 
         .prebuy-tag { position: relative; display: inline-flex; align-items: center; padding: 2px 6px; margin-left: 6px; border-radius: 4px; font-size: 0.6875rem; font-weight: 600; line-height: 1; background: rgba(59, 130, 246, 0.10); border: 1px solid rgba(59, 130, 246, 0.22); color: var(--primary-dark); cursor: default; user-select: none; }
         .prebuy-tag::before,
-        .prebuy-tag::after { opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -6px); transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease; }
+        .prebuy-tag::after {
+ opacity: 0; visibility: hidden; pointer-events: none; transform: translate(-50%, -6px); transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease; }
         .prebuy-tag::after { content: attr(data-tooltip); position: absolute; left: 50%; bottom: calc(100% + 12px); width: max-content; max-width: min(360px, 70vw); white-space: normal; overflow-wrap: anywhere; word-break: break-word; padding: 10px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; line-height: 1.35; color: rgba(255,255,255,0.95); background: rgba(17,24,39,0.92); box-shadow: 0 12px 34px rgba(0,0,0,0.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 30; }
         .prebuy-tag::before { content: ''; position: absolute; left: 50%; bottom: calc(100% + 6px); width: 12px; height: 12px; background: rgba(17,24,39,0.92); transform: translate(-50%, -6px) rotate(45deg); border-radius: 3px; box-shadow: 0 8px 18px rgba(0,0,0,0.12); z-index: 29; }
         .prebuy-tag:hover::before,
@@ -4428,134 +4427,76 @@
             const pos = getPosition(fund);
             if (!pos || !pos.has) return { ok: false };
 
-            // 与详情页保持一致：若已有至少两天官方历史净值，优先用“最新两天差分 * 前一披露日份额”。
-            // 这样即使在最新披露日发生卖出，也不会把当日盈亏按卖出后的剩余金额缩小。
+            const status = getMarketStatus();
+            const shProfit = getShanghaiTimeParts();
+            const todayStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
+            const navDateStr = getDateStr(fund.navDate);
+            const estDateStr = getDateStr(fund.estimatedTime);
+            const officialNav0 = parseFloat(fund.currentNav);
+            const estNav0 = Number(fund.estimatedNav);
+            const hasTodayOfficial0 = (navDateStr === todayStr) && Number.isFinite(officialNav0) && officialNav0 > 0;
+
+            const mins0 = shProfit.hour * 60 + shProfit.minute;
+            const isTrading0 = !!(status && status.isOpen);
+            const hasEstNav0 = Number.isFinite(estNav0) && estNav0 > 0;
+            // 今日估值：
+            // - 若带日期且为今日：直接视为今日估值
+            // - 若不带日期/日期解析失败：在盘前/交易中/午休/盘后补全等“可能出现估值更新”的时段，只要 estimatedNav 有效就视为今日估值
+            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const hasTodayEst0 = hasEstNav0 && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
+
+            // 盘前（09:15-09:30）：今日估值已到但今日官方未披露 -> 清空当日盈亏。
             {
-                const raw0 = historyCache[fund.code];
-                const hasHistory0 = Array.isArray(raw0) && raw0.length >= 2;
-                const last0 = hasHistory0 ? raw0[raw0.length - 1] : null;
-                const prev0 = hasHistory0 ? raw0[raw0.length - 2] : null;
-                const lastNav0 = last0 ? Number(last0.y) : NaN;
-                const prevNav0 = prev0 ? Number(prev0.y) : NaN;
-                const prevDate0 = prev0 ? tsToDateStr(prev0.x) : '';
-                if (Number.isFinite(lastNav0) && lastNav0 > 0 && Number.isFinite(prevNav0) && prevNav0 > 0 && prevDate0) {
-                    const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate0);
-                    if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
-                        const dailyProfit0 = (lastNav0 - prevNav0) * sharesPrev0;
-                        const prevValue0 = prevNav0 * sharesPrev0;
-                        const todayValue0 = lastNav0 * sharesPrev0;
-                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
-                    }
+                const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+                if (isPreOpen0 && hasTodayEst0 && !hasTodayOfficial0) {
+                    return { ok: false };
                 }
             }
 
-            const status = getMarketStatus();
-            const shProfit = getShanghaiTimeParts();
-            const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
-            const navDateProfitStr = getDateStr(fund.navDate);
-            const officialNav0 = parseFloat(fund.currentNav);
-            const profitNav0 = parseFloat(getDisplayNav(fund));
-            const profitNav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0))
-                ? officialNav0
-                : (Number.isFinite(profitNav0)
-                    ? profitNav0
-                    : ((status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全')
-                        ? parseFloat(fund.estimatedNav || fund.currentNav)
-                        : parseFloat(fund.currentNav)));
-
-            if (!Number.isFinite(profitNav) || profitNav <= 0) return { ok: false };
-            const m = calcPositionMetrics(pos, profitNav);
-            if (!m.ok) return { ok: false };
-
-            const dayGrowth = parseFloat(fund.dayGrowth);
-            const todayValue = Number(m.value) || 0;
-
-            let prevValue = todayValue;
-            let dailyProfit = 0;
-            let hasDiff = false;
-
+            // 准备历史净值（官方披露）
             const raw = historyCache[fund.code];
             const hasHistory = Array.isArray(raw) && raw.length >= 1;
             const last = hasHistory ? raw[raw.length - 1] : null;
             const prev = (Array.isArray(raw) && raw.length >= 2) ? raw[raw.length - 2] : null;
-
             const lastNav = last ? Number(last.y) : NaN;
             const lastDate = last ? tsToDateStr(last.x) : '';
             const prevNav = prev ? Number(prev.y) : NaN;
             const prevDate = prev ? tsToDateStr(prev.x) : '';
 
-            const shNow = getShanghaiTimeParts();
-            const todayStr = `${shNow.year}-${String(shNow.month).padStart(2,'0')}-${String(shNow.day).padStart(2,'0')}`;
-            const navDateStr = getDateStr(fund.navDate);
-
-            let todayNavToUse = NaN;
-            let baseNav = NaN;
-            let baseDate = '';
-
-            if (navDateStr === todayStr && Number.isFinite(officialNav0) && officialNav0 > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
-                todayNavToUse = officialNav0;
-                baseNav = prevNav;
-                baseDate = prevDate;
-                hasDiff = true;
-            } else {
-                const estDateStr = getDateStr(fund.estimatedTime);
-                const estNav = Number(fund.estimatedNav);
-                if (estDateStr === todayStr && Number.isFinite(estNav) && estNav > 0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
-                    todayNavToUse = estNav;
-                    baseNav = lastNav;
-                    baseDate = lastDate;
-                    hasDiff = true;
-                }
-            }
-
-            if (Number.isFinite(todayNavToUse) && todayNavToUse > 0 && Number.isFinite(baseNav) && baseNav > 0 && baseDate) {
-                const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, baseDate);
+            // 今日官方已披露：用(今日官方-昨日官方)*昨日份额
+            if (hasTodayOfficial0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
+                const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
                 if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
-                    prevValue = baseNav * sharesPrev0;
-                    dailyProfit = (todayNavToUse - baseNav) * sharesPrev0;
-                } else {
-                    hasDiff = false;
+                    const dailyProfit0 = (officialNav0 - prevNav) * sharesPrev0;
+                    const prevValue0 = prevNav * sharesPrev0;
+                    const todayValue0 = officialNav0 * sharesPrev0;
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
                 }
             }
 
-            // 买入当日：首次建仓时当日盈亏为0（从次日开始计收益）
-            {
-                const sh0 = getShanghaiTimeParts();
-                const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
-                const buys0 = getFundBuys(fund);
-                const sells0 = getFundSells(fund);
-                if (Array.isArray(buys0) && buys0.length > 0 && (!Array.isArray(sells0) || sells0.length === 0)) {
-                    const todayBuyEff = buys0.some(b => {
-                        const bp = getFirstHistoryPointOnOrAfter(fund.code, b.date);
-                        return bp && bp.date === todayStr0;
-                    });
-                    if (todayBuyEff) {
-                        const baseDate0 = baseDate || '';
-                        const prevShares0 = baseDate0 ? calcSharesAsOfDate(fund.code, fund, baseDate0) : 0;
-                        if (!(Number.isFinite(prevShares0) && prevShares0 > 0)) {
-                            return { ok: true, dailyProfit: 0, prevValue: todayValue, todayValue };
-                        }
-                    }
+            // 交易中且今日官方未披露：若有“今日估值”，用(今日估值-最新披露官方)*最新披露日份额，随估值更新。
+            if (isTrading0 && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
+                const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
+                if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
+                    const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
+                    const prevValue0 = lastNav * sharesLast0;
+                    const todayValue0 = estNav0 * sharesLast0;
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
                 }
             }
 
-            if (!hasDiff) {
-                const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
-                if (src0 === 'est') {
-                    const mBase = calcPositionMetricsOfficialT2FromBuys(fund);
-                    const baseValue = (mBase && mBase.ok) ? Number(mBase.value) : todayValue;
-                    prevValue = Number.isFinite(baseValue) ? baseValue : todayValue;
-                    dailyProfit = (Number.isFinite(dayGrowth) && Number.isFinite(prevValue)) ? (prevValue * dayGrowth / 100) : 0;
-                } else {
-                    if (Number.isFinite(dayGrowth) && Number.isFinite(todayValue) && Math.abs(dayGrowth) < 50) {
-                        const k = 1 + dayGrowth / 100;
-                        if (k !== 0) prevValue = todayValue / k;
-                    }
-                    dailyProfit = todayValue - prevValue;
+            // 非交易时段：用最新两天官方历史净值差分（展示上一披露日的当日盈亏）
+            if (Number.isFinite(lastNav) && lastNav > 0 && Number.isFinite(prevNav) && prevNav > 0 && prevDate) {
+                const sharesPrev0 = calcSharesAsOfDate(fund.code, fund, prevDate);
+                if (Number.isFinite(sharesPrev0) && sharesPrev0 > 0) {
+                    const dailyProfit0 = (lastNav - prevNav) * sharesPrev0;
+                    const prevValue0 = prevNav * sharesPrev0;
+                    const todayValue0 = lastNav * sharesPrev0;
+                    return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
                 }
             }
 
-            return { ok: true, dailyProfit, prevValue, todayValue };
+            return { ok: false };
         }
 
         async function ensureHistoryForPositionIfNeeded(fund) {
@@ -4605,8 +4546,7 @@
                     continue;
                 }
                 // 回退：若无法用官方历史净值口径（缺历史/有卖出等），用原口径
-                const shProfit = getShanghaiTimeParts();
-                const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
+                const todayProfitStr = getShanghaiTodayStr();
                 const navDateProfitStr = getDateStr(f.navDate);
                 const officialNav0 = parseFloat(f.currentNav);
                 const dispNav0 = parseFloat(getDisplayNav(f));
@@ -5330,7 +5270,7 @@
                 const sortedSectors = Object.values(sectors).map(s => ({ ...s, avgChg: s.chg.length > 0 ? s.chg.reduce((a, b) => a + b, 0) / s.chg.length : 0 })).sort((a, b) => b.weight - a.weight).slice(0, 6);
                 const filteredSectors = sortedSectors.filter(s => s.name !== '其他');
                 const sectorHtml = filteredSectors.map(s =>
-                    `<span class="sector-tag ${s.avgChg >= 0 ? 'positive' : 'negative'}">${s.name} ${s.weight.toFixed(1)}% ${s.avgChg !== 0 ? '(' + (s.avgChg >= 0 ? '+' : '') + s.avgChg.toFixed(2) + '%)' : ''}</span>`
+                    `<span class="sector-tag">${s.name} ${s.weight.toFixed(1)}% ${s.avgChg !== 0 ? '(' + (s.avgChg >= 0 ? '+' : '') + s.avgChg.toFixed(2) + '%)' : ''}</span>`
                 ).join('');
                 tags.innerHTML = top10WeightTag + (sectorHtml || '');
             }
