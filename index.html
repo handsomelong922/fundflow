@@ -3384,22 +3384,22 @@
                     : ((status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全')
                         ? parseFloat(fund.estimatedNav || fund.currentNav)
                         : parseFloat(fund.currentNav)));
-            // 持仓收益口径：只用“官方披露净值”计算，避免把估算盈亏叠加到持仓收益造成误导
-            const navForPositionMetrics = showDailyProfit
-                ? profitNav
-                : (Number.isFinite(officialNav0) ? officialNav0 : profitNav);
             const pos = getPosition(fund);
+
+            // 统一“持仓金额”口径：详情页无论展示“持仓收益/当日盈亏”，持仓金额都使用同一个值（基于官方净值）。
+            const navForHoldingValue0 = Number.isFinite(officialNav0) ? officialNav0 : profitNav;
+            const mv0 = (pos.has && Number.isFinite(navForHoldingValue0)) ? calcPositionMetrics(pos, navForHoldingValue0) : { ok: false };
+            const holdingValueUnified0 = mv0 && mv0.ok ? (Number(mv0.value) || 0) : NaN;
 
             // 当日盈亏：与概览页共用同一计算口径（calcDailyProfitForFund），避免卖出后按“剩余金额”导致不一致。
             if (showDailyProfit) {
                 const dp = calcDailyProfitForFund(fund);
                 if (dp && dp.ok) {
                     const dailyProfit0 = Number(dp.dailyProfit) || 0;
-                    const todayValue0 = Number(dp.todayValue);
                     document.getElementById('totalProfit').textContent = '¥' + dailyProfit0.toFixed(2);
                     document.getElementById('totalProfit').className = `stat-value ${dailyProfit0>=0?'positive':'negative'}`;
                     const ppEl0 = document.getElementById('profitPercent');
-                    ppEl0.textContent = '持仓金额 ¥' + (Number.isFinite(todayValue0) ? todayValue0.toFixed(2) : '--');
+                    ppEl0.textContent = '持仓金额 ¥' + (Number.isFinite(holdingValueUnified0) ? holdingValueUnified0.toFixed(2) : '--');
                     ppEl0.className = 'stat-change';
                     ppEl0.style.color = '';
                     const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
@@ -3416,17 +3416,15 @@
                 }
                 return;
             }
-            if (pos.has && Number.isFinite(navForPositionMetrics)) {
-                const m = calcPositionMetrics(pos, navForPositionMetrics);
+            if (pos.has && Number.isFinite(navForHoldingValue0)) {
+                const m = mv0;
                 if (m.ok) {
-                    const todayValue = Number(m.value) || 0;
-
                     // 持仓收益
                     {
                         document.getElementById('totalProfit').textContent = '¥' + m.profit.toFixed(2);
                         document.getElementById('totalProfit').className = `stat-value ${m.profit>=0?'positive':'negative'}`;
                         const ppEl = document.getElementById('profitPercent');
-                        ppEl.textContent = '持仓金额 ¥' + todayValue.toFixed(2);
+                        ppEl.textContent = '持仓金额 ¥' + (Number.isFinite(holdingValueUnified0) ? holdingValueUnified0.toFixed(2) : '--');
                         ppEl.className = 'stat-change';
                         ppEl.style.color = '';
 
@@ -4438,19 +4436,17 @@
 
             const mins0 = shProfit.hour * 60 + shProfit.minute;
             const isTrading0 = !!(status && status.isOpen);
-            const hasEstNav0 = Number.isFinite(estNav0) && estNav0 > 0;
+            const isMiddayBreak0 = !!(status && status.reason === '午间休市');
             // 今日估值：
             // - 若带日期且为今日：直接视为今日估值
             // - 若不带日期/日期解析失败：在盘前/交易中/午休/盘后补全等“可能出现估值更新”的时段，只要 estimatedNav 有效就视为今日估值
             const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
-            const hasTodayEst0 = hasEstNav0 && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
+            const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
             // 盘前（09:15-09:30）：今日估值已到但今日官方未披露 -> 清空当日盈亏。
-            {
-                const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
-                if (isPreOpen0 && hasTodayEst0 && !hasTodayOfficial0) {
-                    return { ok: false };
-                }
+            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            if (isPreOpen0 && hasTodayEst0 && !hasTodayOfficial0) {
+                return { ok: false };
             }
 
             // 准备历史净值（官方披露）
@@ -4475,11 +4471,17 @@
             }
 
             // 交易中且今日官方未披露：若有“今日估值”，用(今日估值-最新披露官方)*最新披露日份额，随估值更新。
-            if (isTrading0 && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
+            if ((isTrading0 || isMiddayBreak0) && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
-                    const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
                     const prevValue0 = lastNav * sharesLast0;
+                    const dayGrowth0 = parseFloat(fund.dayGrowth);
+                    if (Number.isFinite(dayGrowth0)) {
+                        const dailyProfit0 = prevValue0 * (dayGrowth0 / 100);
+                        const todayValue0 = prevValue0 + dailyProfit0;
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
+                    }
+                    const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
                     const todayValue0 = estNav0 * sharesLast0;
                     return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0, todayValue: todayValue0 };
                 }
@@ -6175,7 +6177,8 @@
                             renderFundOverview();
                         }
                         if (selectedFund?.code === f.code) {
-                            updateMainDisplay(selectedFund);
+                            selectedFund = f;
+                            updateMainDisplay(f);
                             if (currentTimeRange === 'realtime') updateRealtimeChart();
                         }
                         return;
