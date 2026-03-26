@@ -2337,18 +2337,8 @@
                     });
                 }
             },
-            ttjj_api_jsonp: {
-                name: 'ttjj_api_jsonp', priority: 2,
-                fetch: async (code) => {
-                    const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=1&_=${Date.now()}`;
-                    const json = await fetchJsonp(url, 'callback', 12000);
-                    const latest = json?.Data?.LSJZList?.[0];
-                    if (!latest) throw new Error('No data');
-                    return { name: json.Data.SHORTNAME || code, dwjz: latest.DWJZ, jzrq: latest.FSRQ, gsz: latest.DWJZ, gszzl: latest.JZZZL || '0.00', gztime: latest.FSRQ + ' 15:00' };
-                }
-            },
             pingzhongdata_script: {
-                name: 'pingzhongdata_script', priority: 3,
+                name: 'pingzhongdata_script', priority: 2,
                 fetch: async (code) => {
                     await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
                     const name = (window.fS_name || window.fSName || '').toString();
@@ -2413,11 +2403,7 @@
             }
             throw lastError || new Error('所有数据源均失败');
         }
-
-        function showSourceStats() { console.table(Object.entries(sourceStats).map(([name, stats]) => ({ 数据源: name, 成功: stats.success, 失败: stats.fail, 成功率: stats.success + stats.fail > 0 ? ((stats.success / (stats.success + stats.fail)) * 100).toFixed(1) + '%' : 'N/A', 平均耗时: stats.success > 0 ? (stats.totalTime / stats.success).toFixed(0) + 'ms' : 'N/A' }))); }
-        window.showSourceStats = showSourceStats;
         
-        let lastSuccessfulSource = 'fundgz_jsonp';
         document.getElementById('sourceIndicator')?.addEventListener('click', () => { openSourceStatsModal(); });
 
         function renderSourceStatsTable() {
@@ -2447,15 +2433,9 @@
         }
         function closeSourceStats() { document.getElementById('sourceStatsModal').classList.remove('active'); }
         document.getElementById('sourceStatsModal')?.addEventListener('click', (e) => { if (e.target.id === 'sourceStatsModal') closeSourceStats(); });
-        function updateSourceIndicator(sourceName) { lastSuccessfulSource = sourceName; const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
+        function updateSourceIndicator(sourceName) { const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
 
         window.addEventListener('DOMContentLoaded', () => { 
-            console.log(
-                '%cHigher%c | %c9880699@gmail.com',
-                'background:#2563eb;color:#ffffff;font-weight:700;padding:2px 6px;border-radius:6px;',
-                'color:#6b7280;font-weight:600;',
-                'background:#ec4899;color:#ffffff;font-weight:700;padding:2px 6px;border-radius:6px;'
-            );
             initChart(); 
             renderFundList(); 
             initMobileSidebarSwipeClose();
@@ -3134,6 +3114,8 @@
                 fund._dayGrowthSource = 'official';
                 fund._estDayGrowthSource = '';
                 fund.dayGrowth = newestChg;
+                fund._officialDayGrowth = newestChg;
+                fund._officialDayGrowthDate = newestDate;
                 return newestChg;
             }
 
@@ -3315,12 +3297,18 @@
                 fund._fundgzTriedThisFetch = attempted0.includes('fundgz_jsonp');
                 fund._fundgzFailedThisFetch = failed0.includes('fundgz_jsonp');
                 fund.name = data.name;
-                // 防回退：如果接口返回的官方净值日期更早（常见于夜间/跨日缓存），不要覆盖本地已拿到的更新日期净值
+                // fundgz 是“估值接口”，其 dwjz/jzrq 代表“上一交易日官方净值快照”，不能覆盖最新官方披露日期。
+                // 官方净值/日期以 historyCache(历史净值表) 或官方数据源为准。
+                // 仅在完全缺少任何官方数据时，才允许用 fundgz 的 dwjz/jzrq 做一次初始化。
+                const srcName0 = (data && data._sourceName) ? String(data._sourceName) : '';
                 const incomingNavDateStr0 = getDateStr(data.jzrq);
                 const existingNavDateStr0 = getDateStr(fund.navDate);
-                const shouldUpdateOfficialNav0 = !existingNavDateStr0
-                    || !incomingNavDateStr0
-                    || (incomingNavDateStr0 >= existingNavDateStr0);
+                const latestOfficial0 = getLatestOfficialHistoryPoint(fund.code);
+                const hasAnyOfficial0 = !!(latestOfficial0 && latestOfficial0.date) || !!existingNavDateStr0;
+                const canUpdateOfficialFromSource0 = (srcName0 !== 'fundgz_jsonp');
+                const shouldInitOfficialFromFundgz0 = (!hasAnyOfficial0 && srcName0 === 'fundgz_jsonp');
+                const shouldUpdateOfficialNav0 = (canUpdateOfficialFromSource0 || shouldInitOfficialFromFundgz0)
+                    && (!existingNavDateStr0 || !incomingNavDateStr0 || (incomingNavDateStr0 >= existingNavDateStr0));
                 if (shouldUpdateOfficialNav0) {
                     fund.currentNav = data.dwjz;
                     fund.navDate = data.jzrq;
@@ -3453,14 +3441,37 @@
 
         // 计算历史最长连续涨跌和当前连续涨跌
         function calculateStreakData(fund) {
-            const history = historyCache[fund.code];
-            if (!Array.isArray(history) || history.length < 2) {
+            const historyRaw = historyCache[fund.code];
+            if (!Array.isArray(historyRaw) || historyRaw.length < 2) {
                 return {
                     maxUpStreak: 0,
                     maxDownStreak: 0,
                     currentStreak: 0,
                     currentIsUp: null
                 };
+            }
+
+            // 统一口径：按日期从旧到新计算（不依赖 historyCache 的原始顺序）
+            const history = historyRaw.slice().sort((a, b) => {
+                const ax = Number(a?.x);
+                const bx = Number(b?.x);
+                if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
+                if (!Number.isFinite(ax)) return 1;
+                if (!Number.isFinite(bx)) return -1;
+                return ax - bx;
+            });
+
+            // 若 historyCache 尚未更新到今日，但 baiduNewest 已提供今日官方净值，则把“今日”作为虚拟最新点纳入计算
+            const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+            const bnNav0 = Number(fund && fund._baiduNewestNav);
+            if (bnDate0 && Number.isFinite(bnNav0) && bnNav0 > 0) {
+                const last = history.length > 0 ? history[history.length - 1] : null;
+                const lastDate = last ? tsToDateStr(last.x) : '';
+                if (!lastDate || bnDate0 > lastDate) {
+                    const x0 = Date.parse(bnDate0);
+                    const x = Number.isFinite(x0) ? x0 : (Date.now());
+                    history.push({ x, y: bnNav0 });
+                }
             }
 
             let maxUpStreak = 0;
@@ -3522,17 +3533,47 @@
         function updateMainDisplay(fund) {
             document.getElementById('selectedFundName').textContent = fund.name || '未知基金';
             document.getElementById('selectedFundCode').textContent = fund.code;
-            document.getElementById('currentNav').textContent = fund.currentNav || '--';
-            document.getElementById('navDateLabel').textContent = fund.navDate ? fund.navDate.substring(5) : '--';
+
+            // 卡片展示优先与“历史净值数据”保持一致：若 historyCache 已拿到更晚的官方净值，则以其为准
+            const latestOfficial = getLatestOfficialHistoryPoint(fund.code);
+            let displayNavDate = (fund && fund.navDate) ? String(fund.navDate) : '';
+            let displayNav = (fund && fund.currentNav !== undefined && fund.currentNav !== null) ? String(fund.currentNav) : '';
+            if (latestOfficial && latestOfficial.date && (!displayNavDate || latestOfficial.date > displayNavDate)) {
+                displayNavDate = latestOfficial.date;
+                displayNav = Number.isFinite(latestOfficial.y) ? String(latestOfficial.y) : displayNav;
+                fund.navDate = displayNavDate;
+                fund.currentNav = displayNav;
+            }
+
+            // 若 baiduNewest 已拿到“今日官方净值”，但 historyCache 尚未更新到今日，则用其补齐当前净值卡片日期与披露时间
+            const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+            const bnNav0 = Number(fund && fund._baiduNewestNav);
+            if (bnDate0 && Number.isFinite(bnNav0) && bnNav0 > 0 && (!displayNavDate || bnDate0 > displayNavDate)) {
+                displayNavDate = bnDate0;
+                displayNav = String(bnNav0);
+                fund.navDate = displayNavDate;
+                fund.currentNav = displayNav;
+            }
+
+            document.getElementById('currentNav').textContent = displayNav || '--';
+            document.getElementById('navDateLabel').textContent = displayNavDate ? displayNavDate.substring(5) : '--';
 
             const sh0 = getShanghaiTimeParts();
             const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
-            const navDateStr0 = getDateStr(fund.navDate);
+            const navDateStr0 = getDateStr(displayNavDate);
             const navChangeEl = document.getElementById('navChange');
             if (navChangeEl) {
                 if (navDateStr0 === todayStr0) {
                     const raw = historyCache[fund.code];
-                    const prev = Array.isArray(raw) && raw.length >= 2 ? raw[raw.length - 2] : null;
+                    // 若 historyCache 也已更新到“今日官方净值”，则前日=倒数第2条；
+                    // 否则（例如今日净值来自 baiduNewest，但 historyCache 只到昨日），前日=最后一条。
+                    const latestH = getLatestOfficialHistoryPoint(fund.code);
+                    const hasTodayInHistory = !!(latestH && latestH.date === todayStr0);
+                    const prev = Array.isArray(raw)
+                        ? (hasTodayInHistory
+                            ? (raw.length >= 2 ? raw[raw.length - 2] : null)
+                            : (raw.length >= 1 ? raw[raw.length - 1] : null))
+                        : null;
                     const prevNav = prev ? Number(prev.y) : NaN;
                     const prevDate = prev ? tsToDateStr(prev.x) : '';
                     if (Number.isFinite(prevNav)) {
@@ -3557,8 +3598,8 @@
             const status = getMarketStatus();
             const shProfit = getShanghaiTimeParts();
             const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
-            const navDateProfitStr = getDateStr(fund.navDate);
-            const officialNav0 = parseFloat(fund.currentNav);
+            const navDateProfitStr = getDateStr(displayNavDate);
+            const officialNav0 = parseFloat(displayNav);
             const profitNav0 = parseFloat(getDisplayNav(fund));
             const profitNav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0))
                 ? officialNav0
@@ -4167,8 +4208,10 @@
                     }
                     chgEl.style.fontSize = '';
                 } else if (src === 'official') {
-                    const off = getOfficialDayGrowthFromHistoryWithDate(fund);
-                    const offDate = off.date ? off.date.slice(5) : '';
+                    const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+                    const offDate0 = (fund && fund._officialDayGrowthDate) ? String(fund._officialDayGrowthDate) : '';
+                    const dateStr0 = bnDate0 || offDate0 || (getOfficialDayGrowthFromHistoryWithDate(fund).date || '');
+                    const offDate = dateStr0 ? dateStr0.slice(5) : '';
                     chgEl.innerHTML = offDate
                         ? `当日涨幅 ${offDate} 15:00 <span class="day-growth-source official">官方</span>`
                         : `当日涨幅 <span class="day-growth-source official">官方</span>`;
@@ -4292,26 +4335,6 @@
                 if (d > dateStr) return d;
             }
             return '';
-        }
-
-        function getHistoryPointByDate(code, dateStr) {
-            const all = historyCache[code];
-            if (!Array.isArray(all) || all.length === 0 || !dateStr) return null;
-            for (let i = all.length - 1; i >= 0; i--) {
-                const d = tsToDateStr(all[i].x);
-                if (d === dateStr) return { i, x: all[i].x, y: Number(all[i].y), date: d };
-                if (d < dateStr) break;
-            }
-            return null;
-        }
-
-        function getPrevHistoryPoint(code, dateStr) {
-            const p = getHistoryPointByDate(code, dateStr);
-            if (!p) return null;
-            const all = historyCache[code];
-            const i = p.i - 1;
-            if (!Array.isArray(all) || i < 0) return null;
-            return { i, x: all[i].x, y: Number(all[i].y), date: tsToDateStr(all[i].x) };
         }
 
         function getLatestOfficialHistoryPoint(code) {
@@ -4816,15 +4839,21 @@
             const mainContent = document.querySelector('.main-content');
             const inOverview = !!(mainContent && mainContent.classList.contains('overview-mode'));
             const inSummary = !!(mainContent && mainContent.classList.contains('summary-mode'));
+            const inDetail = !inOverview && !inSummary;
+            const removedWasSelected = (selectedFund?.code === code);
 
-            if (selectedFund?.code === code) selectedFund = funds[0] || null;
+            if (removedWasSelected) selectedFund = null;
             renderFundList();
             if (inOverview) {
                 renderFundOverview();
             } else if (inSummary) {
                 renderSummaryView();
             } else {
-                if (selectedFund) selectFund(selectedFund);
+                if (removedWasSelected && inDetail) {
+                    showOverviewMode();
+                } else if (selectedFund) {
+                    selectFund(selectedFund);
+                }
             }
             showToast(`已删除 ${removed?.name || removed?.code || code}`);
         }
@@ -6419,7 +6448,31 @@
                 if (bnDate === todayStr && Number.isFinite(bnChg) && latestDate && latestDate < todayStr) {
                     const pctText = (bnChg >= 0 ? '+' : '') + bnChg.toFixed(2) + '%';
                     const navText = Number.isFinite(bnNav) && bnNav > 0 ? bnNav.toFixed(4) : '--';
-                    rows.push(`<tr><td>${todayStr}</td><td>${navText}</td><td class="${bnChg>=0?'positive':'negative'}">${pctText}</td><td>--</td></tr>`);
+                    let dayProfitText = '--';
+                    let dayProfitClass = '';
+                    if (fundForCalc && Number.isFinite(bnNav) && bnNav > 0) {
+                        let sharesPrev = 0;
+                        const profitEligible = (!firstEffBuyDate || latestDate >= firstEffBuyDate);
+                        if (profitEligible) {
+                            sharesPrev = calcSharesAsOfDate(code, fundForCalc, latestDate);
+                            if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
+                                const legacy = getPositionFromLegacy(fundForCalc);
+                                if (legacy.has) sharesPrev = Number(legacy.shares) || 0;
+                            }
+                            if (!(Number.isFinite(sharesPrev) && sharesPrev > 0)) {
+                                const posNow = getPosition(fundForCalc);
+                                if (posNow && posNow.has) sharesPrev = Number(posNow.shares) || 0;
+                            }
+                        }
+                        if (!Number.isFinite(sharesPrev) || sharesPrev < 0) sharesPrev = 0;
+                        const lastY = Number(all[all.length - 1]?.y);
+                        if (sharesPrev > 0 && Number.isFinite(lastY) && lastY > 0) {
+                            const dayProfit = (bnNav - lastY) * sharesPrev;
+                            dayProfitText = '¥' + dayProfit.toFixed(2);
+                            dayProfitClass = dayProfit >= 0 ? 'positive' : 'negative';
+                        }
+                    }
+                    rows.push(`<tr><td>${todayStr}</td><td>${navText}</td><td class="${bnChg>=0?'positive':'negative'}">${pctText}</td><td class="${dayProfitClass}">${dayProfitText}</td></tr>`);
                 }
             }
             for (let k = start; k < end; k++) {
