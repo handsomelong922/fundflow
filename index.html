@@ -2144,10 +2144,16 @@
                 sourceStats[name].success++;
                 sourceStats[name].totalTime += duration;
                 updateSourceIndicator(name);
+                if (document.getElementById('sourceStatsModal')?.classList.contains('active')) {
+                    renderSourceStatsTable();
+                }
                 return data;
             } catch (error) {
                 const duration = Date.now() - startTime;
                 sourceStats[name].fail++;
+                if (document.getElementById('sourceStatsModal')?.classList.contains('active')) {
+                    renderSourceStatsTable();
+                }
                 throw error;
             }
         }
@@ -2301,6 +2307,9 @@
                     failedSources.push(source.name);
                     ensureSourceStat(source.name);
                     sourceStats[source.name].fail++;
+                    if (document.getElementById('sourceStatsModal')?.classList.contains('active')) {
+                        renderSourceStatsTable();
+                    }
                     console.warn(`❌ [${source.name}] 失败: ${error.message} (${duration}ms)`);
                     lastError = error;
                     if (source !== sources[sources.length - 1]) { await new Promise(resolve => setTimeout(resolve, 200)); continue; }
@@ -2314,12 +2323,30 @@
         
         let lastSuccessfulSource = 'fundgz_jsonp';
         document.getElementById('sourceIndicator')?.addEventListener('click', () => { openSourceStatsModal(); });
+
+        function renderSourceStatsTable() {
+            const tbody = document.getElementById('sourceStatsTableBody');
+            if (!tbody) return;
+            const statsData = Object.entries(sourceStats)
+                .map(([name, stats]) => ({
+                    name,
+                    success: stats.success,
+                    fail: stats.fail,
+                    successRate: stats.success + stats.fail > 0 ? ((stats.success / (stats.success + stats.fail)) * 100).toFixed(1) : 'N/A',
+                    avgTime: stats.success > 0 ? (stats.totalTime / stats.success).toFixed(0) : 'N/A'
+                }))
+                .sort((a, b) => (parseFloat(b.successRate) || 0) - (parseFloat(a.successRate) || 0));
+
+            tbody.innerHTML = statsData.map(stat => {
+                const rate = parseFloat(stat.successRate) || 0;
+                const rateClass = rate >= 80 ? 'high' : rate >= 50 ? 'medium' : 'low';
+                return `<tr><td style="font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;">${stat.name}</td><td style="color: #10b981; font-weight: 600;">${stat.success}</td><td style="color: #ef4444; font-weight: 600;">${stat.fail}</td><td class="success-rate ${rateClass}">${stat.successRate}${stat.successRate !== 'N/A' ? '%' : ''}</td><td style="font-family: 'JetBrains Mono', monospace;">${stat.avgTime}${stat.avgTime !== 'N/A' ? 'ms' : ''}</td></tr>`;
+            }).join('') || '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--gray-500);">暂无数据</td></tr>';
+        }
         
         function openSourceStatsModal() {
             const modal = document.getElementById('sourceStatsModal');
-            const tbody = document.getElementById('sourceStatsTableBody');
-            const statsData = Object.entries(sourceStats).map(([name, stats]) => ({ name, success: stats.success, fail: stats.fail, successRate: stats.success + stats.fail > 0 ? ((stats.success / (stats.success + stats.fail)) * 100).toFixed(1) : 'N/A', avgTime: stats.success > 0 ? (stats.totalTime / stats.success).toFixed(0) : 'N/A' })).sort((a, b) => (parseFloat(b.successRate) || 0) - (parseFloat(a.successRate) || 0));
-            tbody.innerHTML = statsData.map(stat => { const rate = parseFloat(stat.successRate) || 0; const rateClass = rate >= 80 ? 'high' : rate >= 50 ? 'medium' : 'low'; return `<tr><td style="font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;">${stat.name}</td><td style="color: #10b981; font-weight: 600;">${stat.success}</td><td style="color: #ef4444; font-weight: 600;">${stat.fail}</td><td class="success-rate ${rateClass}">${stat.successRate}${stat.successRate !== 'N/A' ? '%' : ''}</td><td style="font-family: 'JetBrains Mono', monospace;">${stat.avgTime}${stat.avgTime !== 'N/A' ? 'ms' : ''}</td></tr>`; }).join('') || '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--gray-500);">暂无数据</td></tr>';
+            renderSourceStatsTable();
             modal.classList.add('active');
         }
         function closeSourceStats() { document.getElementById('sourceStatsModal').classList.remove('active'); }
@@ -3408,7 +3435,7 @@
                     document.getElementById('totalProfit').textContent = '--';
                     document.getElementById('totalProfit').className = 'stat-value';
                     const ppEl0 = document.getElementById('profitPercent');
-                    ppEl0.textContent = '持仓金额 --';
+                    ppEl0.textContent = (pos && pos.has) ? '持仓金额 --' : '未设置持仓';
                     ppEl0.className = 'stat-change';
                     ppEl0.style.color = '#000';
                     const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
@@ -3481,9 +3508,13 @@
                 } else if (buys.length > 0) {
                     ppEl.textContent = hasHistory ? '等待净值更新' : '加载中...';
                     ppEl.style.color = '#000';
+                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
                 } else {
                     ppEl.textContent = '未设置持仓';
                     ppEl.style.color = '#000';
+                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
                 }
                 ppEl.className = 'stat-change';
             }
