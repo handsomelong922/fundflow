@@ -5548,7 +5548,8 @@
             // 移动端：进入概览模式时隐藏概览按钮
             const mobileOverviewBtn = document.getElementById('mobileOverviewBtn');
             if (mobileOverviewBtn) mobileOverviewBtn.style.display = 'none';
-            
+
+            resetAutoFreezeIfNeeded();
             renderFundOverview();
 
             // 预热：概览页的“当日盈亏”依赖 historyCache 计算买入份额；后台补齐后自动重绘
