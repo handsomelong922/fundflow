@@ -417,20 +417,20 @@
             #summaryScroll th, #summaryScroll td { padding: 2px 2px; }
             #summaryScroll th { white-space: nowrap; }
             #summaryScroll { overflow-x: hidden !important; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-            #summaryScroll tbody td { font-size: 13px !important; line-height: 1.15; padding-top: 4px; padding-bottom: 4px; }
+            #summaryScroll tbody td { font-size: 13px !important; line-height: 1.25; padding-top: 6px; padding-bottom: 6px; vertical-align: middle; }
 
             .summary-container { padding: 14px; border-radius: 16px; }
             .summary-container .table-header { font-size: 0.95rem; margin-bottom: 8px; padding-bottom: 8px; }
-            .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: auto; white-space: nowrap; }
 
             /* 仅保留：基金(1)、持仓金额(2)、累计收益(3)、当日盈亏(4) */
             #summaryScroll th:nth-child(2), #summaryScroll td:nth-child(2),
             #summaryScroll th:nth-child(5), #summaryScroll td:nth-child(5) { display: none; }
 
-            /* 三列布局：基金(1)/累计收益(3)/当日盈亏(4) 占满 100%：50/25/25 */
-            #summaryScroll th:nth-child(1), #summaryScroll td:nth-child(1) { width: 50%; }
-            #summaryScroll th:nth-child(3), #summaryScroll td:nth-child(3) { width: 25%; }
-            #summaryScroll th:nth-child(4), #summaryScroll td:nth-child(4) { width: 25%; }
+            /* 三列布局：基金(1)/累计收益(3)/当日盈亏(4) 占满 100%：56/22/22 */
+            #summaryScroll th:nth-child(1), #summaryScroll td:nth-child(1) { width: 56%; }
+            #summaryScroll th:nth-child(3), #summaryScroll td:nth-child(3) { width: 22%; }
+            #summaryScroll th:nth-child(4), #summaryScroll td:nth-child(4) { width: 22%; }
 
             /* 数值列：不换行，超出省略号，避免撑出横向滚动 */
             #summaryScroll td:nth-child(3),
@@ -4778,14 +4778,20 @@
             const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
+            // 统一口径：当官方“今日净值”未披露但已在展示“今日估值/估值涨跌幅”时，当日盈亏必须跟随估值口径。
+            // 这里用 getDisplayDayGrowth 触发与 UI 一致的“口径选择”，避免午间休市/盘后落回上一交易日官方。
+            const dg0 = getDisplayDayGrowth(fund);
+            const usingEstNow0 = !hasTodayOfficial0 && hasTodayEst0 && (String(fund && fund._dayGrowthSource) === 'est' || (navDateStr !== todayStr));
+
             // 盘前（09:15-09:30）：今日估值已到但今日官方未披露 -> 清空当日盈亏。
             const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
             if (isPreOpen0 && hasTodayEst0 && !hasTodayOfficial0) {
                 return { ok: false };
             }
 
-            // 已休市或已明确拿到“今日官方”（含 newest 作为今日官方补点）：当日盈亏必须与历史净值表同口径
-            if (!status.canRealtimeUpdate || hasTodayOfficial0 || ((getDateStr(fund && fund._baiduNewestDayGrowthDate) || (fund && fund._baiduNewestDayGrowthDate) || '') === todayStr)) {
+            // 已休市或已明确拿到“今日官方”（含 newest 作为今日官方补点）：当日盈亏与历史净值表同口径。
+            // 但若当前口径为“估值”(usingEstNow0)，则不能走该分支，否则会把当日盈亏错误回退到上一交易日官方。
+            if ((!usingEstNow0) && (!status.canRealtimeUpdate || hasTodayOfficial0 || ((getDateStr(fund && fund._baiduNewestDayGrowthDate) || (fund && fund._baiduNewestDayGrowthDate) || '') === todayStr))) {
                 const aligned = calcDailyProfitAlignedWithHistoryTable(fund);
                 if (aligned && aligned.ok) return { ok: true, dailyProfit: aligned.dailyProfit, prevValue: aligned.prevValue };
             }
@@ -4826,7 +4832,7 @@
             if ((isTrading0 || isMiddayBreak0) && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
-                    const dayGrowth0 = getDisplayDayGrowth(fund);
+                    const dayGrowth0 = Number.isFinite(dg0) ? dg0 : getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
                         const prevValue0 = lastNav * sharesLast0;
                         const dailyProfit0 = prevValue0 * (dayGrowth0 / 100);
@@ -4844,7 +4850,7 @@
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
                     const baseValue0 = lastNav * sharesLast0;
-                    const dayGrowth0 = getDisplayDayGrowth(fund);
+                    const dayGrowth0 = Number.isFinite(dg0) ? dg0 : getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
                         const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
                         return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0 };
