@@ -423,11 +423,11 @@
             .summary-container .table-header { font-size: 0.95rem; margin-bottom: 8px; padding-bottom: 8px; }
             .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: auto; white-space: nowrap; }
 
-            /* 仅保留：基金(1)、持仓金额(2)、累计收益(3)、当日盈亏(4) */
+            /* 仅保留：基金(1)、持仓金额(2)、持仓收益(3)、当日盈亏(4) */
             #summaryScroll th:nth-child(2), #summaryScroll td:nth-child(2),
             #summaryScroll th:nth-child(5), #summaryScroll td:nth-child(5) { display: none; }
 
-            /* 三列布局：基金(1)/累计收益(3)/当日盈亏(4) 占满 100%：56/22/22 */
+            /* 三列布局：基金(1)/持仓收益(3)/当日盈亏(4) 占满 100%：56/22/22 */
             #summaryScroll th:nth-child(1), #summaryScroll td:nth-child(1) { width: 56%; }
             #summaryScroll th:nth-child(3), #summaryScroll td:nth-child(3) { width: 22%; }
             #summaryScroll th:nth-child(4), #summaryScroll td:nth-child(4) { width: 22%; }
@@ -463,6 +463,8 @@
         @keyframes summaryMarquee { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
         .summary-tag .icon { width: 22px; height: 22px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-700); font-size: 0.9rem; flex: 0 0 auto; }
         .summary-tag b { font-weight: 900; color: var(--gray-900); }
+
+        .summary-row-tag-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 8px; background: var(--gray-50); border: 1px solid var(--gray-200); font-size: 0.85rem; line-height: 1; flex: 0 0 auto; }
 
         @media (max-width: 520px) {
             .summary-tags { margin: 8px 0 6px; }
@@ -508,6 +510,7 @@
         @media (max-width: 768px) { 
             .mobile-menu-btn { display: flex; }
             .mobile-overview-btn { display: flex; }
+            .summary-row-tag-icon { display: none; }
             .sidebar { 
                 width: 100%; 
                 max-width: 380px;
@@ -827,7 +830,7 @@
                     </div>
                     <div class="history-scroll" id="summaryScroll">
                         <table>
-                            <thead><tr><th>基金</th><th>持仓金额</th><th>累计收益</th><th>当日盈亏</th><th>持有天数</th></tr></thead>
+                            <thead><tr><th>基金</th><th>持仓金额</th><th>持仓收益</th><th>当日盈亏</th><th>持有天数</th></tr></thead>
                             <tbody id="summaryTableBody"><tr><td colspan="5" class="summary-empty">暂无持仓</td></tr></tbody>
                         </table>
                     </div>
@@ -5322,6 +5325,8 @@
         let summarySortKey = 'profit_desc';
         let _summaryTagsHtmlCache = '';
         let _summaryTagsKeyCache = '';
+        let _summarySelectedTag = null;
+        let _summaryTagsClickBound = false;
 
         function setSummarySort(key) {
             summarySortKey = key || 'profit_desc';
@@ -5483,9 +5488,9 @@
             const holdingCountForTags0 = holdingFunds0.length;
 
             // 原有标签
-            if (holdingCountForTags0 >= 2 && favHasAny0 && topFav && topFav.fund) tags.push(`<span class="summary-tag"><span class="icon">⭐</span><span>最钟爱</span><b>${topFav.fund.name || topFav.fund.code}</b></span>`);
-            if (holdingCountForTags0 >= 2 && topProfit && topProfit.fund && Number.isFinite(Number(topProfit.value)) && Number(topProfit.value) > 0) tags.push(`<span class="summary-tag"><span class="icon">🚀</span><span>贡献最高</span><b>${topProfit.fund.name || topProfit.fund.code}</b></span>`);
-            if (holdingCountForTags0 >= 2 && worstLoss && worstLoss.fund && Number.isFinite(Number(worstLoss.value)) && Number(worstLoss.value) < 0) tags.push(`<span class="summary-tag"><span class="icon">🧊</span><span>亏损最大</span><b>${worstLoss.fund.name || worstLoss.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && favHasAny0 && topFav && topFav.fund) tags.push(`<span class="summary-tag" data-code="${topFav.fund.code || ''}" data-icon="⭐"><span class="icon">⭐</span><span>最钟爱</span><b>${topFav.fund.name || topFav.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && topProfit && topProfit.fund && Number.isFinite(Number(topProfit.value)) && Number(topProfit.value) > 0) tags.push(`<span class="summary-tag" data-code="${topProfit.fund.code || ''}" data-icon="🚀"><span class="icon">🚀</span><span>贡献最高</span><b>${topProfit.fund.name || topProfit.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && worstLoss && worstLoss.fund && Number.isFinite(Number(worstLoss.value)) && Number(worstLoss.value) < 0) tags.push(`<span class="summary-tag" data-code="${worstLoss.fund.code || ''}" data-icon="🧊"><span class="icon">🧊</span><span>亏损最大</span><b>${worstLoss.fund.name || worstLoss.fund.code}</b></span>`);
 
             // 今日最佳/最差：基于 dayGrowth（涨跌幅）
             let bestToday = null;
@@ -5499,8 +5504,8 @@
                 if (!worstToday || pct < worstToday.pct) worstToday = { fund: f, pct };
             }
             // 今日最佳/最差：需要至少 2 个候选才有“最佳/最差”的对比意义；正/负分别独立触发
-            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && bestToday?.fund && Number.isFinite(Number(bestToday.pct)) && Number(bestToday.pct) > 0) tags.push(`<span class="summary-tag"><span class="icon">🥇</span><span>今日最佳</span><b>${bestToday.fund.name || bestToday.fund.code}</b></span>`);
-            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && worstToday?.fund && Number.isFinite(Number(worstToday.pct)) && Number(worstToday.pct) < 0) tags.push(`<span class="summary-tag"><span class="icon">🥉</span><span>今日最差</span><b>${worstToday.fund.name || worstToday.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && bestToday?.fund && Number.isFinite(Number(bestToday.pct)) && Number(bestToday.pct) > 0) tags.push(`<span class="summary-tag" data-code="${bestToday.fund.code || ''}" data-icon="🥇"><span class="icon">🥇</span><span>今日最佳</span><b>${bestToday.fund.name || bestToday.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && todayCandidateCount0 >= 2 && worstToday?.fund && Number.isFinite(Number(worstToday.pct)) && Number(worstToday.pct) < 0) tags.push(`<span class="summary-tag" data-code="${worstToday.fund.code || ''}" data-icon="🥉"><span class="icon">🥉</span><span>今日最差</span><b>${worstToday.fund.name || worstToday.fund.code}</b></span>`);
 
             // 近期黑马：近7天涨幅最佳（依赖 historyCache）
             let best7d = null;
@@ -5519,7 +5524,7 @@
                 if (!best7d || pct7 > best7d.pct) best7d = { fund: f, pct: pct7 };
             }
             // 近期黑马：需要至少 2 个候选才有“黑马”的对比意义
-            if (holdingCountForTags0 >= 2 && best7dCandidateCount0 >= 2 && best7d?.fund && Number.isFinite(Number(best7d.pct)) && Number(best7d.pct) > 0) tags.push(`<span class="summary-tag"><span class="icon">🐎</span><span>近期黑马</span><b>${best7d.fund.name || best7d.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && best7dCandidateCount0 >= 2 && best7d?.fund && Number.isFinite(Number(best7d.pct)) && Number(best7d.pct) > 0) tags.push(`<span class="summary-tag" data-code="${best7d.fund.code || ''}" data-icon="🐎"><span class="icon">🐎</span><span>近期黑马</span><b>${best7d.fund.name || best7d.fund.code}</b></span>`);
 
             // 回暖中：连续上涨（依赖 historyCache）
             let warming = null;
@@ -5531,7 +5536,7 @@
                 if (!warming || streak > warming.streak) warming = { fund: f, streak };
             }
             // 回暖中：连续上涨（至少 2 天），且至少有 2 只持仓基金才展示（避免单基金时“只剩一个标签”的错觉）
-            if (holdingCountForTags0 >= 2 && warming?.fund) tags.push(`<span class="summary-tag"><span class="icon">🌤</span><span>回暖中</span><b>${warming.fund.name || warming.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && warming?.fund) tags.push(`<span class="summary-tag" data-code="${warming.fund.code || ''}" data-icon="🌤"><span class="icon">🌤</span><span>回暖中</span><b>${warming.fund.name || warming.fund.code}</b></span>`);
 
             // 新进成员：最近一次买入日期最新（依赖 buys）
             let newest = null;
@@ -5549,7 +5554,7 @@
                 if (!newest || latestDate > newest.date) newest = { fund: f, date: latestDate };
             }
             // 新进成员：至少 2 个候选才展示（否则没有“新进”对比意义）
-            if (holdingCountForTags0 >= 2 && newestCandidateCount0 >= 2 && newest?.fund) tags.push(`<span class="summary-tag"><span class="icon">🆕</span><span>新进成员</span><b>${newest.fund.name || newest.fund.code}</b></span>`);
+            if (holdingCountForTags0 >= 2 && newestCandidateCount0 >= 2 && newest?.fund) tags.push(`<span class="summary-tag" data-code="${newest.fund.code || ''}" data-icon="🆕"><span class="icon">🆕</span><span>新进成员</span><b>${newest.fund.name || newest.fund.code}</b></span>`);
 
             const tagsKey = tags.join('');
             if (!tagsKey) {
@@ -5575,6 +5580,27 @@
                 }
             }
 
+            if (!_summaryTagsClickBound) {
+                _summaryTagsClickBound = true;
+                tagsEl.addEventListener('click', (ev) => {
+                    const t = ev.target && ev.target.closest ? ev.target.closest('.summary-tag') : null;
+                    if (!t) return;
+                    const code0 = (t.getAttribute('data-code') || '').trim();
+                    const icon0 = (t.getAttribute('data-icon') || '').trim();
+                    if (!code0 || !icon0) {
+                        _summarySelectedTag = null;
+                        renderSummaryView();
+                        return;
+                    }
+                    if (_summarySelectedTag && _summarySelectedTag.code === code0 && _summarySelectedTag.icon === icon0) {
+                        _summarySelectedTag = null;
+                    } else {
+                        _summarySelectedTag = { code: code0, icon: icon0 };
+                    }
+                    renderSummaryView();
+                });
+            }
+
             const sortKey = String(summarySortKey || 'profit_desc');
             const key = sortKey.startsWith('profitPct') ? 'profitPct' : 'profit';
             const dir = sortKey.endsWith('_asc') ? 1 : -1;
@@ -5595,6 +5621,9 @@
             tbody.innerHTML = rows.map(r => {
                 const name = r.fund?.name || r.fund?.code || '--';
                 const code = r.fund?.code || '';
+                const tagIcon = (_summarySelectedTag && _summarySelectedTag.code === code)
+                    ? `<span class="summary-row-tag-icon">${_summarySelectedTag.icon}</span>`
+                    : '';
                 const profitCls = r.profit >= 0 ? 'positive' : 'negative';
                 const dailyCls = Number.isFinite(r.dailyProfit) ? (r.dailyProfit >= 0 ? 'positive' : 'negative') : '';
                 const pctCls = Number.isFinite(r.profitPct) ? (r.profitPct >= 0 ? 'positive' : 'negative') : '';
@@ -5607,7 +5636,7 @@
 
                 return `
                     <tr class="summary-row" data-code="${code}">
-                        <td><div class="summary-fund-name" style="font-weight:900;">${name}</div><div class="mono summary-fund-code" style="color:var(--gray-500); font-size:0.75rem;">${code}</div><div class="mono summary-fund-value" style="color:var(--gray-500); font-size:0.75rem; display:none;">¥${r.value.toFixed(2)}</div></td>
+                        <td><div class="summary-fund-name" style="font-weight:900;">${tagIcon}${name}</div><div class="mono summary-fund-code" style="color:var(--gray-500); font-size:0.75rem;">${code}</div><div class="mono summary-fund-value" style="color:var(--gray-500); font-size:0.75rem; display:none;">¥${r.value.toFixed(2)}</div></td>
                         <td class="mono">¥${r.value.toFixed(2)}</td>
                         <td class="mono ${profitCls}"><div>¥${r.profit.toFixed(2)}</div><div class="summary-cell-sub mono ${pctCls}">${profitPctStr}</div></td>
                         <td class="mono ${dailyCls}"><div>${dailyStr}</div><div class="summary-cell-sub mono ${dgCls}">${dgStr}</div></td>
