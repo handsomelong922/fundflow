@@ -807,7 +807,7 @@
                         <div class="summary-metric-value" id="summaryTotalValue">--</div>
                     </div>
                     <div class="summary-metric">
-                        <div class="summary-metric-label"><span class="icon">🏆</span><span>累计收益</span></div>
+                        <div class="summary-metric-label"><span class="icon">🏆</span><span>持仓收益</span></div>
                         <div class="summary-metric-value" id="summaryTotalProfit">--</div>
                     </div>
                     <div class="summary-metric">
@@ -4919,41 +4919,54 @@
             amountEl.style.color = 'rgba(255,255,255,0.95)';
             profitEl.style.color = 'rgba(255,255,255,0.95)';
 
-            let totalValue = 0;
-            let totalProfit = 0;
-            let hasAny = false;
-
-            for (const f of funds) {
-                const pos = getPosition(f);
-                if (!pos.has) continue;
-                hasAny = true;
-                const m2 = calcPositionMetricsOfficialT2FromBuys(f);
-                if (m2 && m2.ok) {
-                    totalValue += m2.value;
-                    totalProfit += m2.profit;
-                    continue;
-                }
-                // 回退：若无法用官方历史净值口径（缺历史/有卖出等），用原口径
-                const todayProfitStr = getShanghaiTodayStr();
-                const navDateProfitStr = getDateStr(f.navDate);
-                const officialNav0 = parseFloat(f.currentNav);
-                const dispNav0 = parseFloat(getDisplayNav(f));
-                const nav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0)) ? officialNav0 : dispNav0;
-                if (!Number.isFinite(nav)) continue;
-                const m = calcPositionMetrics(pos, nav);
-                if (!m.ok) continue;
-                totalValue += m.value;
-                totalProfit += m.profit;
-            }
-
-            if (!hasAny) {
+            const s = calcAllPositionSummary();
+            if (!s || !s.hasAny) {
                 amountEl.textContent = '--';
                 profitEl.textContent = '--';
                 return;
             }
 
-            amountEl.textContent = '¥' + totalValue.toFixed(2);
-            profitEl.textContent = '¥' + totalProfit.toFixed(2);
+            amountEl.textContent = '¥' + s.totalValue.toFixed(2);
+            profitEl.textContent = '¥' + s.totalProfit.toFixed(2);
+        }
+
+        function calcHoldingMetricsForSummary(fund) {
+            if (!fund) return { ok: false };
+            const pos = getPosition(fund);
+            if (!pos || !pos.has) return { ok: false };
+
+            const m2 = calcPositionMetricsOfficialT2FromBuys(fund);
+            if (m2 && m2.ok) return { ok: true, invested: m2.invested, value: m2.value, profit: m2.profit, profitPct: m2.profitPct };
+
+            // 回退：若无法用官方历史净值口径（缺历史/有卖出等），用展示口径的净值计算持仓金额/收益
+            const todayProfitStr = getShanghaiTodayStr();
+            const navDateProfitStr = getDateStr(fund.navDate);
+            const officialNav0 = parseFloat(fund.currentNav);
+            const dispNav0 = parseFloat(getDisplayNav(fund));
+            const nav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0)) ? officialNav0 : dispNav0;
+            if (!Number.isFinite(nav)) return { ok: false };
+            const m = calcPositionMetrics(pos, nav);
+            if (!m || !m.ok) return { ok: false };
+            return { ok: true, invested: m.invested, value: m.value, profit: m.profit, profitPct: m.profitPct };
+        }
+
+        function calcAllPositionSummary() {
+            let totalValue = 0;
+            let totalProfit = 0;
+            let totalInvested = 0;
+            let hasAny = false;
+
+            for (const f of (Array.isArray(funds) ? funds : [])) {
+                const m = calcHoldingMetricsForSummary(f);
+                if (!m || !m.ok) continue;
+                hasAny = true;
+                totalValue += Number(m.value) || 0;
+                totalProfit += Number(m.profit) || 0;
+                const inv0 = Number(m.invested);
+                if (Number.isFinite(inv0) && inv0 > 0) totalInvested += inv0;
+            }
+
+            return { hasAny, totalValue, totalProfit, totalInvested };
         }
         
         async function addFund() {
@@ -5405,10 +5418,7 @@
                 const pos = getPosition(f);
                 if (!pos || !pos.has) continue;
 
-                const nav0 = parseFloat(f.currentNav);
-                if (!Number.isFinite(nav0) || nav0 <= 0) continue;
-
-                const m = calcPositionMetrics(pos, nav0);
+                const m = calcHoldingMetricsForSummary(f);
                 if (!m || !m.ok) continue;
 
                 const dp = calcDailyProfitForFund(f);
