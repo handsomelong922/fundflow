@@ -464,6 +464,13 @@
         .summary-tag .icon { width: 22px; height: 22px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-700); font-size: 0.9rem; flex: 0 0 auto; }
         .summary-tag b { font-weight: 900; color: var(--gray-900); }
 
+        @media (max-width: 520px) {
+            .summary-tags { margin: 8px 0 6px; }
+            .summary-tags-track { gap: 6px; padding-right: 6px; }
+            .summary-tag { gap: 6px; padding: 5px 8px; border-radius: 10px; font-size: 0.75rem; }
+            .summary-tag .icon { width: 18px; height: 18px; border-radius: 8px; font-size: 0.8rem; }
+        }
+
         #summaryScroll { max-height: 440px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
         #summaryScroll table { min-width: 640px; }
         #summaryScroll thead th { position: sticky; top: 0; background: white; z-index: 10; }
@@ -810,7 +817,7 @@
                 </div>
                 <div class="data-table-container summary-container">
                     <div class="table-header summary-table-header">
-                        <span class="table-title">组合持仓明细</span>
+                        <span class="table-title">持仓明细</span>
                         <select class="summary-sort" id="summarySort" onchange="setSummarySort(this.value)">
                             <option value="profit_desc">按收益↓</option>
                             <option value="profit_asc">按收益↑</option>
