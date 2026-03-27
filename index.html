@@ -410,6 +410,51 @@
         .summary-table-header .table-title { font-size: inherit; font-weight: inherit; }
         .summary-table-header .summary-sort { margin-left: auto; flex: 0 0 auto; }
 
+        .summary-cell-sub { display: block; font-size: 0.75rem; line-height: 1.1; margin-top: 2px; }
+
+        @media (max-width: 520px) {
+            #summaryScroll table { font-size: 0.64rem; table-layout: fixed; width: 100%; min-width: 0 !important; }
+            #summaryScroll th, #summaryScroll td { padding: 2px 2px; }
+            #summaryScroll th { white-space: nowrap; }
+            #summaryScroll { overflow-x: hidden !important; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+            #summaryScroll tbody td { font-size: 13px !important; line-height: 1.15; padding-top: 4px; padding-bottom: 4px; }
+
+            .summary-container { padding: 14px; border-radius: 16px; }
+            .summary-container .table-header { font-size: 0.95rem; margin-bottom: 8px; padding-bottom: 8px; }
+            .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+            /* 仅保留：基金(1)、持仓金额(2)、累计收益(3)、当日盈亏(4) */
+            #summaryScroll th:nth-child(2), #summaryScroll td:nth-child(2),
+            #summaryScroll th:nth-child(5), #summaryScroll td:nth-child(5) { display: none; }
+
+            /* 三列布局：基金(1)/累计收益(3)/当日盈亏(4) 占满 100%：50/25/25 */
+            #summaryScroll th:nth-child(1), #summaryScroll td:nth-child(1) { width: 50%; }
+            #summaryScroll th:nth-child(3), #summaryScroll td:nth-child(3) { width: 25%; }
+            #summaryScroll th:nth-child(4), #summaryScroll td:nth-child(4) { width: 25%; }
+
+            /* 数值列：不换行，超出省略号，避免撑出横向滚动 */
+            #summaryScroll td:nth-child(3),
+            #summaryScroll td:nth-child(4) { overflow: hidden; }
+            #summaryScroll td:nth-child(3) *,
+            #summaryScroll td:nth-child(4) * {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            #summaryScroll .summary-cell-sub { font-size: 0.60rem !important; margin-top: 1px; }
+
+            #summaryScroll .summary-fund-name {
+                display: block;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            #summaryScroll .summary-fund-code { display: none !important; }
+            #summaryScroll .summary-fund-value { display: block !important; font-size: 0.60rem !important; }
+        }
+
         .summary-tags { display: flex; align-items: center; margin: 12px 0 8px; overflow: hidden; position: relative; }
         .summary-tags-marquee { display: inline-flex; align-items: center; flex: 0 0 auto; width: max-content; animation: summaryMarquee 26s linear infinite; will-change: transform; }
         .summary-tags-track { display: inline-flex; align-items: center; gap: 10px; padding-right: 10px; flex: 0 0 auto; white-space: nowrap; }
@@ -751,7 +796,7 @@
                 </div>
                 <div class="summary-metrics">
                     <div class="summary-metric">
-                        <div class="summary-metric-label"><span class="icon">💰</span><span>持仓总金额</span></div>
+                        <div class="summary-metric-label"><span class="icon">💰</span><span>持仓金额</span></div>
                         <div class="summary-metric-value" id="summaryTotalValue">--</div>
                     </div>
                     <div class="summary-metric">
@@ -763,7 +808,7 @@
                         <div class="summary-metric-value" id="summaryDailyProfit">--</div>
                     </div>
                 </div>
-                <div class="data-table-container">
+                <div class="data-table-container summary-container">
                     <div class="table-header summary-table-header">
                         <span class="table-title">组合持仓明细</span>
                         <select class="summary-sort" id="summarySort" onchange="setSummarySort(this.value)">
@@ -775,8 +820,8 @@
                     </div>
                     <div class="history-scroll" id="summaryScroll">
                         <table>
-                            <thead><tr><th>基金</th><th>持仓金额</th><th>累计收益</th><th>收益率</th><th>当日盈亏</th><th>持有天数</th></tr></thead>
-                            <tbody id="summaryTableBody"><tr><td colspan="6" class="summary-empty">暂无持仓</td></tr></tbody>
+                            <thead><tr><th>基金</th><th>持仓金额</th><th>累计收益</th><th>当日盈亏</th><th>持有天数</th></tr></thead>
+                            <tbody id="summaryTableBody"><tr><td colspan="5" class="summary-empty">暂无持仓</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -5336,6 +5381,8 @@
             let totalValue = 0;
             let totalProfit = 0;
             let totalDailyProfit = 0;
+            let totalInvested = 0;
+            let totalPrevValueForDay = 0;
 
             let topFav = null;
             let topProfit = null;
@@ -5353,6 +5400,7 @@
 
                 const dp = calcDailyProfitForFund(f);
                 const dailyProfit0 = (dp && dp.ok) ? (Number(dp.dailyProfit) || 0) : NaN;
+                const prevValue0 = (dp && dp.ok) ? Number(dp.prevValue) : NaN;
 
                 const profit0 = Number(m.profit) || 0;
                 const profitPct0 = Number(m.profitPct);
@@ -5361,6 +5409,9 @@
                 totalValue += value0;
                 totalProfit += profit0;
                 if (Number.isFinite(dailyProfit0)) totalDailyProfit += dailyProfit0;
+                const inv0 = Number(pos.invested);
+                if (Number.isFinite(inv0) && inv0 > 0) totalInvested += inv0;
+                if (Number.isFinite(prevValue0) && prevValue0 > 0) totalPrevValueForDay += prevValue0;
 
                 const pb = getPositionFromBuy(f);
                 const favScore0 = pb && pb.has ? (Number(pb.totalBuyAmount) || 0) : 0;
@@ -5377,16 +5428,27 @@
                     holdingDays: holdingDays0,
                     profit: profit0,
                     profitPct: profitPct0,
-                    dailyProfit: dailyProfit0
+                    dailyProfit: dailyProfit0,
+                    dayGrowth: getDisplayDayGrowth(f)
                 });
             }
 
             const clsTotalProfit = totalProfit >= 0 ? 'positive' : 'negative';
             const clsDailyProfit = totalDailyProfit >= 0 ? 'positive' : 'negative';
             totalValueEl.textContent = Number.isFinite(totalValue) ? ('¥' + totalValue.toFixed(2)) : '--';
-            totalProfitEl.textContent = Number.isFinite(totalProfit) ? ('¥' + totalProfit.toFixed(2)) : '--';
+            const totalProfitPct0 = (Number.isFinite(totalProfit) && Number.isFinite(totalInvested) && totalInvested > 0)
+                ? (totalProfit / totalInvested * 100)
+                : NaN;
+            totalProfitEl.innerHTML = Number.isFinite(totalProfit)
+                ? (`¥${totalProfit.toFixed(2)}${Number.isFinite(totalProfitPct0) ? `<span class="stat-change" style="display:inline-flex; margin-left:6px;">${totalProfitPct0 >= 0 ? '+' : ''}${totalProfitPct0.toFixed(2)}%</span>` : ''}`)
+                : '--';
             totalProfitEl.className = `summary-metric-value ${clsTotalProfit}`;
-            dailyProfitEl.textContent = Number.isFinite(totalDailyProfit) ? ('¥' + totalDailyProfit.toFixed(2)) : '--';
+            const dailyProfitPct0 = (Number.isFinite(totalDailyProfit) && Number.isFinite(totalPrevValueForDay) && totalPrevValueForDay > 0)
+                ? (totalDailyProfit / totalPrevValueForDay * 100)
+                : NaN;
+            dailyProfitEl.innerHTML = Number.isFinite(totalDailyProfit)
+                ? (`¥${totalDailyProfit.toFixed(2)}${Number.isFinite(dailyProfitPct0) ? `<span class="stat-change" style="display:inline-flex; margin-left:6px;">${dailyProfitPct0 >= 0 ? '+' : ''}${dailyProfitPct0.toFixed(2)}%</span>` : ''}`)
+                : '--';
             dailyProfitEl.className = `summary-metric-value ${clsDailyProfit}`;
 
             // tags：单行滚动展示
@@ -5503,7 +5565,7 @@
             });
 
             if (rows.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="summary-empty">暂无持仓</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="summary-empty">暂无持仓</td></tr>';
                 return;
             }
 
@@ -5513,17 +5575,19 @@
                 const profitCls = r.profit >= 0 ? 'positive' : 'negative';
                 const dailyCls = Number.isFinite(r.dailyProfit) ? (r.dailyProfit >= 0 ? 'positive' : 'negative') : '';
                 const pctCls = Number.isFinite(r.profitPct) ? (r.profitPct >= 0 ? 'positive' : 'negative') : '';
+                const dg0 = Number(r.dayGrowth);
+                const dgCls = Number.isFinite(dg0) ? (dg0 >= 0 ? 'positive' : 'negative') : '';
                 const profitPctStr = Number.isFinite(r.profitPct) ? ((r.profitPct >= 0 ? '+' : '') + r.profitPct.toFixed(2) + '%') : '--';
                 const dailyStr = Number.isFinite(r.dailyProfit) ? ('¥' + r.dailyProfit.toFixed(2)) : '--';
+                const dgStr = Number.isFinite(dg0) ? ((dg0 >= 0 ? '+' : '') + dg0.toFixed(2) + '%') : '--';
                 const holdingDaysStr = Number.isFinite(r.holdingDays) ? String(Math.round(r.holdingDays)) : '--';
 
                 return `
                     <tr class="summary-row" data-code="${code}">
-                        <td><div style="font-weight:900;">${name}</div><div class="mono" style="color:var(--gray-500); font-size:0.75rem;">${code}</div></td>
+                        <td><div class="summary-fund-name" style="font-weight:900;">${name}</div><div class="mono summary-fund-code" style="color:var(--gray-500); font-size:0.75rem;">${code}</div><div class="mono summary-fund-value" style="color:var(--gray-500); font-size:0.75rem; display:none;">¥${r.value.toFixed(2)}</div></td>
                         <td class="mono">¥${r.value.toFixed(2)}</td>
-                        <td class="mono ${profitCls}">¥${r.profit.toFixed(2)}</td>
-                        <td class="mono ${pctCls}">${profitPctStr}</td>
-                        <td class="mono ${dailyCls}">${dailyStr}</td>
+                        <td class="mono ${profitCls}"><div>¥${r.profit.toFixed(2)}</div><div class="summary-cell-sub mono ${pctCls}">${profitPctStr}</div></td>
+                        <td class="mono ${dailyCls}"><div>${dailyStr}</div><div class="summary-cell-sub mono ${dgCls}">${dgStr}</div></td>
                         <td class="mono">${holdingDaysStr}</td>
                     </tr>
                 `;
