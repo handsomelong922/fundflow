@@ -5100,8 +5100,7 @@
         }
 
         function calcDailyProfitForFund(fund) {
-            const pos = getPosition(fund);
-            if (!pos || !pos.has) return { ok: false };
+            if (!getPosition(fund)?.has) return { ok: false };
 
             const status = getMarketStatus();
             const shProfit = getShanghaiTimeParts();
@@ -5175,12 +5174,6 @@
             if ((isTrading0 || isMiddayBreak0) && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
-                    const dayGrowth0 = Number.isFinite(dg0) ? dg0 : getDisplayDayGrowth(fund);
-                    if (Number.isFinite(dayGrowth0)) {
-                        const prevValue0 = lastNav * sharesLast0;
-                        const dailyProfit0 = prevValue0 * (dayGrowth0 / 100);
-                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
-                    }
                     const prevValue0 = lastNav * sharesLast0;
                     const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
                     return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
@@ -5193,6 +5186,10 @@
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
                     const baseValue0 = lastNav * sharesLast0;
+                    if (hasTodayEst0) {
+                        const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0 };
+                    }
                     const dayGrowth0 = Number.isFinite(dg0) ? dg0 : getDisplayDayGrowth(fund);
                     if (Number.isFinite(dayGrowth0)) {
                         const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
