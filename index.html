@@ -179,20 +179,30 @@
         .pos-field input { width: 100%; padding: 10px 14px; border: 2px solid var(--gray-200); border-radius: 10px; font-size: 0.9375rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; transition: border-color 0.2s; background: var(--gray-50); }
         .pos-field input:focus { outline: none; border-color: var(--primary); background: white; }
         .pos-field input:disabled { opacity: 0.45; cursor: not-allowed; }
-        .pos-quick-label { font-size: 0.6875rem; font-weight: 700; color: var(--gray-500); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .pos-quick-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-        .pos-quick-btn { flex: 1; min-width: 0; padding: 7px 4px; border: 1.5px solid var(--gray-200); border-radius: 8px; background: white; font-size: 0.75rem; font-weight: 700; color: var(--gray-700); cursor: pointer; transition: all 0.15s; text-align: center; white-space: nowrap; }
-        .pos-quick-btn:hover { border-color: var(--primary-light); color: var(--primary); background: var(--primary-ultra-light); }
-        .pos-quick-btn.danger { border-color: #fca5a5; color: #dc2626; }
-        .pos-quick-btn.danger:hover { background: #fef2f2; border-color: #ef4444; }
-        .pos-quick-btn.success { border-color: #6ee7b7; color: #059669; }
-        .pos-quick-btn.success:hover { background: #ecfdf5; border-color: #10b981; }
+        .pos-buy-mode-seg { display: flex; gap: 8px; }
+        .pos-buy-mode-btn { flex: 1; padding: 9px 10px; border: 2px solid var(--gray-200); background: var(--gray-50); border-radius: 10px; font-size: 0.8125rem; font-weight: 800; color: var(--gray-700); cursor: pointer; transition: all 0.2s; }
+        .pos-buy-mode-btn:hover { border-color: var(--primary-light); }
+        .pos-buy-mode-btn.active { border-color: var(--primary); background: white; color: var(--primary); }
+        .pos-sip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .pos-sip-grid .pos-sip-col-span-2 { grid-column: span 2; }
+        .pos-field select { width: 100%; padding: 10px 14px; border: 2px solid var(--gray-200); border-radius: 10px; font-size: 0.9375rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; transition: border-color 0.2s; background: var(--gray-50); }
+        .pos-field select:focus { outline: none; border-color: var(--primary); background: white; }
+        .pos-sip-plans { margin-top: 6px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
+        .pos-sip-plans-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+        .pos-sip-plans-title { font-size: 0.6875rem; font-weight: 800; color: var(--gray-600); text-transform: uppercase; letter-spacing: 0.04em; }
+        .pos-sip-plan-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--gray-200); border-radius: 12px; background: white; margin-bottom: 8px; }
+        .pos-sip-plan-left { min-width: 0; }
+        .pos-sip-plan-main { font-size: 0.8125rem; font-weight: 900; color: var(--gray-800); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pos-sip-plan-sub { font-size: 0.75rem; color: var(--gray-500); margin-top: 2px; }
+        .pos-sip-plan-actions { display: flex; align-items: center; gap: 8px; }
+        .pos-sip-plan-del { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--gray-200); background: var(--gray-50); cursor: pointer; font-weight: 900; color: var(--gray-700); }
+        .pos-sip-plan-del:hover { border-color: #fca5a5; color: #dc2626; background: #fef2f2; }
         .pos-buy-history { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
         .pos-buy-history-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
         .pos-buy-history-title { font-size: 0.6875rem; font-weight: 800; color: var(--gray-600); text-transform: uppercase; letter-spacing: 0.04em; }
-        .pos-buy-history-actions { display: flex; gap: 8px; align-items: center; }
-        .pos-buy-history-total { font-size: 0.75rem; font-weight: 800; color: var(--gray-800); font-family: 'JetBrains Mono', monospace; }
-        .pos-buy-history-btn { border: 1.5px solid var(--gray-200); background: white; color: var(--gray-700); border-radius: 8px; padding: 6px 10px; font-size: 0.75rem; font-weight: 800; cursor: pointer; transition: all 0.15s; }
+        .pos-buy-history-actions { display: flex; align-items: center; gap: 8px; }
+        .pos-buy-history-total { font-size: 0.75rem; color: var(--gray-500); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+        .pos-buy-history-btn { border: 1.5px solid var(--gray-200); background: white; border-radius: 10px; padding: 6px 10px; font-size: 0.75rem; font-weight: 800; cursor: pointer; color: var(--gray-700); transition: all 0.15s; }
         .pos-buy-history-btn:hover { border-color: var(--gray-300); background: var(--gray-50); }
         .pos-buy-history-btn.danger { border-color: #fca5a5; color: #dc2626; }
         .pos-buy-history-btn.danger:hover { background: #fef2f2; border-color: #ef4444; }
@@ -662,8 +672,17 @@
                     <label>操作类型</label>
                     <input type="hidden" id="posAction" value="buy">
                     <div class="pos-action-seg" role="tablist" aria-label="交易类型">
-                        <button class="pos-action-btn buy active" id="posActionBuy" type="button" onclick="setPosAction('buy')">买入 / 加仓</button>
-                        <button class="pos-action-btn sell" id="posActionSell" type="button" onclick="setPosAction('sell')">卖出 / 减仓</button>
+                        <button class="pos-action-btn buy active" id="posActionBuy" type="button" onclick="setPosAction('buy')">买入</button>
+                        <button class="pos-action-btn sell" id="posActionSell" type="button" onclick="setPosAction('sell')">卖出</button>
+                    </div>
+                </div>
+
+                <div class="pos-field" id="posBuyModeField">
+                    <label>买入模式</label>
+                    <input type="hidden" id="posBuyMode" value="once">
+                    <div class="pos-buy-mode-seg" role="tablist" aria-label="买入模式">
+                        <button class="pos-buy-mode-btn active" id="posBuyModeOnce" type="button" onclick="setPosBuyMode('once')">单笔申购</button>
+                        <button class="pos-buy-mode-btn" id="posBuyModeSip" type="button" onclick="setPosBuyMode('sip')">定期定投</button>
                     </div>
                 </div>
                 <div class="pos-field">
@@ -672,15 +691,50 @@
                 </div>
                 <div class="pos-field">
                     <label id="posDateLabel">买入时间</label>
-                    <input type="date" id="posBuyDate">
-                </div>
-                <div class="pos-quick-label">快速操作</div>
-                <div class="pos-quick-row">
-                    <button class="pos-quick-btn danger" onclick="posQuickAction('clear')">清仓</button>
-                    <button class="pos-quick-btn" onclick="posQuickAction('half')">1/2</button>
-                    <button class="pos-quick-btn" onclick="posQuickAction('third')">1/3</button>
-                    <button class="pos-quick-btn" onclick="posQuickAction('quarter')">1/4</button>
-                    <button class="pos-quick-btn success" onclick="posQuickAction('double')">2×</button>
+                    <div id="posOnceTimeRow">
+                        <input type="date" id="posBuyDate">
+                    </div>
+                    <div id="posSipTimeRow" style="display:none;">
+                        <div class="pos-sip-grid">
+                            <div>
+                                <label style="display:block;font-size:0.75rem;color:var(--gray-600);margin-bottom:6px;font-weight:800;">周期</label>
+                                <select id="posSipCycle">
+                                    <option value="daily">每日</option>
+                                    <option value="weekly">每周</option>
+                                    <option value="monthly">每月</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:0.75rem;color:var(--gray-600);margin-bottom:6px;font-weight:800;">时间</label>
+                                <input type="time" id="posSipTime" value="09:40">
+                            </div>
+                            <div id="posSipWeeklyWrap" style="display:none;">
+                                <label style="display:block;font-size:0.75rem;color:var(--gray-600);margin-bottom:6px;font-weight:800;">星期</label>
+                                <select id="posSipWeekday">
+                                    <option value="1">周一</option>
+                                    <option value="2">周二</option>
+                                    <option value="3">周三</option>
+                                    <option value="4">周四</option>
+                                    <option value="5">周五</option>
+                                </select>
+                            </div>
+                            <div id="posSipMonthlyWrap" style="display:none;">
+                                <label style="display:block;font-size:0.75rem;color:var(--gray-600);margin-bottom:6px;font-weight:800;">日期</label>
+                                <input type="number" id="posSipMonthday" min="1" max="31" step="1" value="1" placeholder="1-31">
+                            </div>
+                            <div class="pos-sip-col-span-2" style="font-size:0.75rem;color:var(--gray-500);font-weight:700;">
+                                到点自动为该基金发起申购，并写入买入记录（以当天日期计）。
+                            </div>
+                        </div>
+
+                        <div class="pos-sip-plans" id="posSipPlans">
+                            <div class="pos-sip-plans-header">
+                                <div class="pos-sip-plans-title">定投计划</div>
+                                <div style="font-size:0.75rem;color:var(--gray-500);font-family:'JetBrains Mono', monospace;font-weight:700;" id="posSipPlansHint">--</div>
+                            </div>
+                            <div id="posSipPlansList"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="pos-buy-history" id="posBuyHistory">
@@ -1367,26 +1421,85 @@
         // ============================================================
         let _posEditCode = null; // 当前正在编辑的基金代码
 
+        const SIP_TASKS_LS_KEY = 'sip_tasks_v1';
+        let _lastSipCheckMinuteKey = '';
+        let _posSipUiBound = false;
+
         function openPosModal(code) {
             const fund = funds.find(f => f.code === code);
             if (!fund) return;
             _posEditCode = code;
             document.getElementById('posModalTitle').textContent = `编辑持仓 — ${fund.name || code}`;
             document.getElementById('posCode').value = code;
+
+            if (!_posSipUiBound) {
+                _posSipUiBound = true;
+                const cycleEl = document.getElementById('posSipCycle');
+                if (cycleEl) {
+                    cycleEl.addEventListener('change', () => {
+                        updateSipCycleUI();
+                        if (_posEditCode) {
+                            const f = funds.find(x => x && x.code === _posEditCode);
+                            if (f) renderPosSipPlans(f);
+                        }
+                    });
+                }
+            }
+
             setPosAction('buy');
+            setPosBuyMode('once');
             document.getElementById('posAmount').value = '';
             document.getElementById('posBuyDate').value = '';
             renderPosBuyHistory(fund);
             renderPosSellHistory(fund);
+            renderPosSipPlans(fund);
             document.getElementById('posModalOverlay').classList.add('active');
             ensureHistoryForPositionIfNeeded(fund).then(() => {
                 if (_posEditCode !== code) return;
                 if (!document.getElementById('posModalOverlay')?.classList.contains('active')) return;
                 renderPosBuyHistory(fund);
                 renderPosSellHistory(fund);
+                renderPosSipPlans(fund);
             });
             // 短延迟后 focus 金额输入框
             setTimeout(() => document.getElementById('posAmount').focus(), 120);
+        }
+
+        function setPosBuyMode(mode) {
+            const v = (mode === 'sip') ? 'sip' : 'once';
+            const input = document.getElementById('posBuyMode');
+            if (input) input.value = v;
+
+            const b1 = document.getElementById('posBuyModeOnce');
+            const b2 = document.getElementById('posBuyModeSip');
+            if (b1) b1.classList.toggle('active', v === 'once');
+            if (b2) b2.classList.toggle('active', v === 'sip');
+
+            const onceRow = document.getElementById('posOnceTimeRow');
+            const sipRow = document.getElementById('posSipTimeRow');
+            if (onceRow) onceRow.style.display = (v === 'once') ? '' : 'none';
+            if (sipRow) sipRow.style.display = (v === 'sip') ? '' : 'none';
+
+            const dateLabel = document.getElementById('posDateLabel');
+            const action0 = (document.getElementById('posAction')?.value || 'buy');
+            if (dateLabel) {
+                if (action0 === 'sell') dateLabel.textContent = '卖出时间';
+                else dateLabel.textContent = (v === 'once') ? '买入时间' : '执行时间';
+            }
+
+            updateSipCycleUI();
+            if (_posEditCode) {
+                const fund = funds.find(f => f.code === _posEditCode);
+                if (fund) renderPosSipPlans(fund);
+            }
+        }
+
+        function updateSipCycleUI() {
+            const cycle = (document.getElementById('posSipCycle')?.value || 'daily');
+            const wWrap = document.getElementById('posSipWeeklyWrap');
+            const mWrap = document.getElementById('posSipMonthlyWrap');
+            if (wWrap) wWrap.style.display = (cycle === 'weekly') ? '' : 'none';
+            if (mWrap) mWrap.style.display = (cycle === 'monthly') ? '' : 'none';
         }
 
         function setPosAction(action) {
@@ -1400,12 +1513,32 @@
             const amountLabel = document.getElementById('posAmountLabel');
             const dateLabel = document.getElementById('posDateLabel');
             if (amountLabel) amountLabel.textContent = (v === 'sell') ? '卖出金额' : '买入金额';
-            if (dateLabel) dateLabel.textContent = (v === 'sell') ? '卖出时间' : '买入时间';
+            if (dateLabel) {
+                const mode0 = (document.getElementById('posBuyMode')?.value || 'once');
+                if (v === 'sell') dateLabel.textContent = '卖出时间';
+                else dateLabel.textContent = (mode0 === 'once') ? '买入时间' : '执行时间';
+            }
+
+            const buyModeField = document.getElementById('posBuyModeField');
+            if (buyModeField) buyModeField.style.display = (v === 'buy') ? '' : 'none';
+
+            const onceRow = document.getElementById('posOnceTimeRow');
+            const sipRow = document.getElementById('posSipTimeRow');
+            if (v === 'sell') {
+                if (onceRow) onceRow.style.display = '';
+                if (sipRow) sipRow.style.display = 'none';
+            } else {
+                const mode0 = (document.getElementById('posBuyMode')?.value || 'once');
+                if (onceRow) onceRow.style.display = (mode0 === 'once') ? '' : 'none';
+                if (sipRow) sipRow.style.display = (mode0 === 'sip') ? '' : 'none';
+            }
 
             const buyHist = document.getElementById('posBuyHistory');
             const sellHist = document.getElementById('posSellHistory');
             if (buyHist) buyHist.style.display = (v === 'buy') ? '' : 'none';
             if (sellHist) sellHist.style.display = (v === 'sell') ? '' : 'none';
+
+            updateSipCycleUI();
         }
 
         function closePosModal() {
@@ -1437,15 +1570,63 @@
             if (!Number.isFinite(amount)) amount = NaN;
             const action = (document.getElementById('posAction')?.value || 'buy');
 
+            const buyMode = (document.getElementById('posBuyMode')?.value || 'once');
+
             // 未输入直接保存：不做任何修改
-            if (amountVal === '' && date === '') {
+            if (action === 'buy' && buyMode === 'sip') {
+                // sip：不要求 date
+            } else if (amountVal === '' && date === '') {
                 closePosModal();
                 return;
             }
 
             // 金额>0但日期不合法：不允许保存（买入/卖出都一样）
-            if (Number.isFinite(amount) && amount > 0 && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-                showToast('请输入正确的日期', 'error');
+            if (action !== 'buy' || buyMode !== 'sip') {
+                if (Number.isFinite(amount) && amount > 0 && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                    showToast('请输入正确的日期', 'error');
+                    return;
+                }
+            }
+
+            if (action === 'buy' && buyMode === 'sip') {
+                // 金额为空/不合法：视为无操作，直接关闭（与单笔申购一致，不提示）
+                if (amountVal === '' || !Number.isFinite(amount) || amount <= 0) {
+                    closePosModal();
+                    return;
+                }
+                const cycle = (document.getElementById('posSipCycle')?.value || 'daily');
+                const time = (document.getElementById('posSipTime')?.value || '').trim();
+                const weekday = Number(document.getElementById('posSipWeekday')?.value);
+                const monthday = Number(document.getElementById('posSipMonthday')?.value);
+
+                if (!/^\d{2}:\d{2}$/.test(time)) {
+                    showToast('请输入正确的时间', 'error');
+                    return;
+                }
+                if (cycle === 'weekly' && !(Number.isFinite(weekday) && weekday >= 0 && weekday <= 6)) {
+                    showToast('请选择星期', 'error');
+                    return;
+                }
+                if (cycle === 'monthly' && !(Number.isFinite(monthday) && monthday >= 1 && monthday <= 31)) {
+                    showToast('请输入正确的日期(1-31)', 'error');
+                    return;
+                }
+
+                addSipTask({
+                    code: fund.code,
+                    amount: Number(amount),
+                    cycle,
+                    time,
+                    weekday: (cycle === 'weekly') ? weekday : null,
+                    monthday: (cycle === 'monthly') ? monthday : null,
+                    enabled: true
+                });
+
+                closePosModal();
+                renderFundList();
+                syncOverviewAfterPositionChange(fund);
+                if (selectedFund?.code === fund.code) updateMainDisplay(fund);
+                showToast('定投计划已保存');
                 return;
             }
 
@@ -1502,6 +1683,181 @@
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === _posEditCode || selectedFund?.code === fund.code) updateMainDisplay(fund);
             showToast('持仓信息已更新');
+        }
+
+        function loadSipTasks() {
+            try {
+                const raw = localStorage.getItem(SIP_TASKS_LS_KEY);
+                const arr = raw ? JSON.parse(raw) : [];
+                return Array.isArray(arr) ? arr : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function saveSipTasks(tasks) {
+            try { localStorage.setItem(SIP_TASKS_LS_KEY, JSON.stringify(tasks || [])); } catch {}
+        }
+
+        function addSipTask(task) {
+            const t = task || {};
+            const id = `sip_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            const out = {
+                id,
+                code: (t.code || '').toString(),
+                amount: Number(t.amount),
+                cycle: (t.cycle || 'daily').toString(),
+                time: (t.time || '09:40').toString(),
+                weekday: (t.weekday === null || t.weekday === undefined) ? null : Number(t.weekday),
+                monthday: (t.monthday === null || t.monthday === undefined) ? null : Number(t.monthday),
+                enabled: t.enabled !== false,
+                lastRunKey: ''
+            };
+            const tasks = loadSipTasks();
+            tasks.push(out);
+            saveSipTasks(tasks);
+        }
+
+        function removeSipTask(id) {
+            const tasks = loadSipTasks();
+            const next = tasks.filter(t => !(t && t.id === id));
+            if (next.length === tasks.length) return;
+            saveSipTasks(next);
+        }
+
+        function renderPosSipPlans(fund) {
+            const wrap = document.getElementById('posSipPlans');
+            const list = document.getElementById('posSipPlansList');
+            const hint = document.getElementById('posSipPlansHint');
+            if (!wrap || !list || !hint) return;
+
+            const action0 = (document.getElementById('posAction')?.value || 'buy');
+            const mode0 = (document.getElementById('posBuyMode')?.value || 'once');
+            const visible = (action0 === 'buy' && mode0 === 'sip');
+            wrap.style.display = visible ? '' : 'none';
+            if (!visible) return;
+
+            const tasks = loadSipTasks().filter(t => t && t.code === fund.code);
+            hint.textContent = `共 ${tasks.length} 条`;
+
+            if (!tasks.length) {
+                list.innerHTML = `<div style="text-align:center;color:var(--gray-500);font-size:0.8125rem;padding:10px 0;font-weight:700;">暂无定投计划</div>`;
+                return;
+            }
+
+            const wkMap = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六' };
+            list.innerHTML = tasks.map(t => {
+                const amt = Number(t.amount);
+                const amtStr = Number.isFinite(amt) ? `¥${amt.toFixed(2)}` : '--';
+                let rule = '';
+                if (t.cycle === 'daily') rule = `每日 ${t.time}`;
+                else if (t.cycle === 'weekly') rule = `${wkMap[Number(t.weekday)] || '每周'} ${t.time}`;
+                else if (t.cycle === 'monthly') rule = `每月${Number(t.monthday)}日 ${t.time}`;
+                else rule = `${t.cycle || '--'} ${t.time || ''}`;
+                const sub = (t.lastRunKey ? `上次执行 ${t.lastRunKey}` : '未执行');
+                return `
+                    <div class="pos-sip-plan-item">
+                        <div class="pos-sip-plan-left">
+                            <div class="pos-sip-plan-main">${amtStr} · ${rule}</div>
+                            <div class="pos-sip-plan-sub">${sub}</div>
+                        </div>
+                        <div class="pos-sip-plan-actions">
+                            <button class="pos-sip-plan-del" type="button" onclick="removeSipTask('${t.id}'); if (_posEditCode) { const f = funds.find(x => x.code === _posEditCode); if (f) renderPosSipPlans(f); }" title="删除">×</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getSipRunKey(task, sh) {
+            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+            const t = task || {};
+            if (t.cycle === 'weekly') {
+                const d = new Date(`${todayStr}T00:00:00+08:00`);
+                const dayNum = Math.floor((d.getTime() + 8 * 3600 * 1000) / 86400000);
+                const weekNum = Math.floor((dayNum + 4) / 7);
+                return `${sh.year}-W${weekNum}`;
+            }
+            if (t.cycle === 'monthly') return `${sh.year}-${String(sh.month).padStart(2,'0')}`;
+            return todayStr;
+        }
+
+        function shouldRunSipTaskNow(task, sh) {
+            if (!task || task.enabled === false) return false;
+            const tstr = (task.time || '').toString();
+            const nowStr = `${String(sh.hour).padStart(2,'0')}:${String(sh.minute).padStart(2,'0')}`;
+            if (tstr !== nowStr) return false;
+
+            if (task.cycle === 'weekly') {
+                const dow = sh.dow;
+                const want = Number(task.weekday);
+                return Number.isFinite(want) && dow === want;
+            }
+            if (task.cycle === 'monthly') {
+                const want = Number(task.monthday);
+                if (!Number.isFinite(want)) return false;
+                const d = new Date(Date.UTC(sh.year, sh.month - 1, 1));
+                d.setUTCMonth(d.getUTCMonth() + 1);
+                d.setUTCDate(0);
+                const lastDay = d.getUTCDate();
+                const eff = Math.min(Math.max(1, want), lastDay);
+                return sh.day === eff;
+            }
+            return true;
+        }
+
+        function checkSipTasksAndRun() {
+            const sh = getShanghaiTimeParts();
+            const minuteKey = `${sh.year}-${sh.month}-${sh.day} ${sh.hour}:${sh.minute}`;
+            if (_lastSipCheckMinuteKey === minuteKey) return;
+            _lastSipCheckMinuteKey = minuteKey;
+
+            const tasks = loadSipTasks();
+            if (!tasks.length) return;
+
+            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+            let changedTasks = false;
+            let changedFunds = false;
+
+            for (const t of tasks) {
+                if (!t || t.enabled === false) continue;
+                if (!shouldRunSipTaskNow(t, sh)) continue;
+                const runKey = getSipRunKey(t, sh);
+                if (t.lastRunKey === runKey) continue;
+
+                const fund = funds.find(f => f && f.code === t.code);
+                if (!fund) continue;
+
+                const amt = Number(t.amount);
+                if (!Number.isFinite(amt) || amt <= 0) continue;
+                if (!Array.isArray(fund.buys)) fund.buys = [];
+                const idx = fund.buys.findIndex(x => x && x.date === todayStr);
+                if (idx >= 0) {
+                    const prevAmt = Number(fund.buys[idx].amount);
+                    fund.buys[idx].amount = (Number.isFinite(prevAmt) ? prevAmt : 0) + amt;
+                } else {
+                    fund.buys.push({ amount: amt, date: todayStr });
+                }
+                fund.buyAmount = null;
+                fund.buyDate = null;
+
+                t.lastRunKey = runKey;
+                changedTasks = true;
+                changedFunds = true;
+
+                try {
+                    if (selectedFund?.code === fund.code) updateMainDisplay(fund);
+                    if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
+                    syncOverviewAfterPositionChange(fund);
+                } catch {}
+                showToast(`已自动定投：${fund.name || fund.code} ¥${amt.toFixed(2)}`);
+            }
+
+            if (changedTasks) saveSipTasks(tasks);
+            if (changedFunds) {
+                saveFunds();
+                renderFundList();
+            }
         }
 
         function renderPosBuyHistory(fund) {
@@ -1658,40 +2014,6 @@
             if (historyTableState?.code === fund.code) resetHistoryTable(fund.code);
             if (selectedFund?.code === fund.code) updateMainDisplay(fund);
             showToast('已清空卖出记录');
-        }
-
-        function posQuickAction(action) {
-            const amountInput = document.getElementById('posAmount');
-            const current = parseFloat(amountInput.value) || 0;
-            const mode = (document.getElementById('posAction')?.value || 'buy');
-            const fund = _posEditCode ? funds.find(f => f.code === _posEditCode) : null;
-            const available = (mode === 'sell') ? getPosSellAvailableAmount(fund) : NaN;
-            switch (action) {
-                case 'clear':
-                    // 清仓属于卖出
-                    setPosAction('sell');
-                    amountInput.value = '0';
-                    break;
-                case 'half':
-                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
-                        ? (available / 2).toFixed(2)
-                        : (current / 2).toFixed(2);
-                    break;
-                case 'third':
-                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
-                        ? (available / 3).toFixed(2)
-                        : (current / 3).toFixed(2);
-                    break;
-                case 'quarter':
-                    amountInput.value = (mode === 'sell' && Number.isFinite(available) && available > 0)
-                        ? (available / 4).toFixed(2)
-                        : (current / 4).toFixed(2);
-                    break;
-                case 'double':
-                    amountInput.value = (current * 2).toFixed(2);
-                    break;
-            }
-            amountInput.dispatchEvent(new Event('input'));
         }
 
         // 主页标题栏 stats 折叠/展开
@@ -6982,6 +7304,8 @@
                     const now = Date.now();
 
                     resetAutoFreezeIfNeeded();
+
+                    checkSipTasksAndRun();
 
                     const enableOfficialPolling = shouldEnableOfficialPolling(status);
                     let needEstimateAfterClose = false;
