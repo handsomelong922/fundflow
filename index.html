@@ -427,6 +427,11 @@
         .summary-table-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .summary-table-header .table-title { font-size: inherit; font-weight: inherit; }
         .summary-table-header .summary-sort { margin-left: auto; flex: 0 0 auto; }
+        .summary-edit-btn { width: 40px; height: 40px; padding: 0; border-radius: 12px; border: 2px solid var(--gray-200); background: rgba(255,255,255,0.95); font-size: 1.0rem; font-weight: 900; color: var(--gray-700); cursor: pointer; flex: 0 0 auto; transition: border-color 0.2s, background 0.2s, color 0.2s; }
+        .summary-edit-btn:hover { border-color: var(--primary-light); }
+        .summary-edit-btn.active { border-color: var(--primary); background: white; color: var(--primary); }
+
+        .summary-edit-input { width: 100%; max-width: 100%; box-sizing: border-box; min-width: 0; padding: 6px 8px; border: 2px solid var(--gray-200); border-radius: 10px; background: white; font-size: 0.8125rem; }
 
         .summary-cell-sub { display: block; font-size: 0.75rem; line-height: 1.1; margin-top: 2px; }
 
@@ -440,6 +445,7 @@
             .summary-container { padding: 14px; border-radius: 16px; }
             .summary-container .table-header { font-size: 0.95rem; margin-bottom: 8px; padding-bottom: 8px; }
             .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: auto; white-space: nowrap; }
+            .summary-container .summary-edit-btn { width: 34px; height: 34px; border-radius: 10px; font-size: 0.95rem; }
 
             /* 仅保留：基金(1)、持仓金额(2)、持仓收益(3)、当日盈亏(4) */
             #summaryScroll th:nth-child(2), #summaryScroll td:nth-child(2),
@@ -889,6 +895,7 @@
                             <option value="profitPct_desc">按收益率↓</option>
                             <option value="profitPct_asc">按收益率↑</option>
                         </select>
+                        <button class="summary-edit-btn" id="summaryManualEditBtn" type="button" onclick="toggleSummaryManualEdit()" title="编辑持仓">⚙</button>
                     </div>
                     <div class="history-scroll" id="summaryScroll">
                         <table>
@@ -3988,26 +3995,11 @@
 
             // 日涨跌幅 — 由 updateDayGrowthDisplay 负责渲染
             updateDayGrowthDisplay(fund);
-            
-            const status = getMarketStatus();
-            const shProfit = getShanghaiTimeParts();
-            const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
-            const navDateProfitStr = getDateStr(displayNavDate);
-            const officialNav0 = parseFloat(displayNav);
-            const profitNav0 = parseFloat(getDisplayNav(fund));
-            const profitNav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0))
-                ? officialNav0
-                : (Number.isFinite(profitNav0)
-                    ? profitNav0
-                    : ((status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全')
-                        ? parseFloat(fund.estimatedNav || fund.currentNav)
-                        : parseFloat(fund.currentNav)));
             const pos = getPosition(fund);
 
-            // 统一“持仓金额”口径：详情页无论展示“持仓收益/当日盈亏”，持仓金额都使用同一个值（基于官方净值）。
-            const navForHoldingValue0 = Number.isFinite(officialNav0) ? officialNav0 : profitNav;
-            const mv0 = (pos.has && Number.isFinite(navForHoldingValue0)) ? calcPositionMetrics(pos, navForHoldingValue0) : { ok: false };
-            const holdingValueUnified0 = mv0 && mv0.ok ? (Number(mv0.value) || 0) : NaN;
+            // 详情页的“持仓金额/持仓收益”统一口径：与汇总页一致，且支持“自定义编辑”覆盖。
+            const mu0 = calcHoldingMetricsUnified(fund, { includeManualOverride: true });
+            const holdingValueUnified0 = (mu0 && mu0.ok) ? (Number(mu0.value) || 0) : NaN;
 
             // 当日盈亏：与概览页共用同一计算口径（calcDailyProfitForFund），避免卖出后按“剩余金额”导致不一致。
             if (showDailyProfit) {
@@ -4034,13 +4026,14 @@
                 }
                 return;
             }
-            if (pos.has && Number.isFinite(navForHoldingValue0)) {
-                const m = mv0;
+            if (mu0 && mu0.ok) {
+                const m = mu0;
                 if (m.ok) {
                     // 持仓收益
                     {
-                        document.getElementById('totalProfit').textContent = '¥' + m.profit.toFixed(2);
-                        document.getElementById('totalProfit').className = `stat-value ${m.profit>=0?'positive':'negative'}`;
+                        const profit0 = Number(m.profit) || 0;
+                        document.getElementById('totalProfit').textContent = '¥' + profit0.toFixed(2);
+                        document.getElementById('totalProfit').className = `stat-value ${profit0>=0?'positive':'negative'}`;
                         const ppEl = document.getElementById('profitPercent');
                         ppEl.textContent = '持仓金额 ¥' + (Number.isFinite(holdingValueUnified0) ? holdingValueUnified0.toFixed(2) : '--');
                         ppEl.className = 'stat-change';
@@ -5273,24 +5266,67 @@
             profitEl.textContent = '¥' + s.totalProfit.toFixed(2);
         }
 
-        function calcHoldingMetricsForSummary(fund) {
+        function getDisplayNavForHoldingCalcUnified(fund) {
+            const latestOfficial = getLatestOfficialHistoryPoint(fund?.code);
+            let displayNavDate = (fund && fund.navDate) ? String(fund.navDate) : '';
+            let displayNav = (fund && fund.currentNav !== undefined && fund.currentNav !== null) ? String(fund.currentNav) : '';
+            if (latestOfficial && latestOfficial.date && (!displayNavDate || latestOfficial.date > displayNavDate)) {
+                displayNavDate = latestOfficial.date;
+                displayNav = Number.isFinite(latestOfficial.y) ? String(latestOfficial.y) : displayNav;
+            }
+            const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+            const bnNav0 = Number(fund && fund._baiduNewestNav);
+            if (bnDate0 && Number.isFinite(bnNav0) && bnNav0 > 0 && (!displayNavDate || bnDate0 > displayNavDate)) {
+                displayNavDate = bnDate0;
+                displayNav = String(bnNav0);
+            }
+            return { displayNavDate, displayNav };
+        }
+
+        function calcHoldingMetricsUnified(fund, options = {}) {
             if (!fund) return { ok: false };
             const pos = getPosition(fund);
             if (!pos || !pos.has) return { ok: false };
 
-            const m2 = calcPositionMetricsOfficialT2FromBuys(fund);
-            if (m2 && m2.ok) return { ok: true, invested: m2.invested, value: m2.value, profit: m2.profit, profitPct: m2.profitPct };
+            const { displayNavDate, displayNav } = getDisplayNavForHoldingCalcUnified(fund);
+            const status = getMarketStatus();
+            const shProfit = getShanghaiTimeParts();
+            const todayProfitStr = `${shProfit.year}-${String(shProfit.month).padStart(2,'0')}-${String(shProfit.day).padStart(2,'0')}`;
+            const navDateProfitStr = getDateStr(displayNavDate);
 
-            // 回退：若无法用官方历史净值口径（缺历史/有卖出等），用展示口径的净值计算持仓金额/收益
-            const todayProfitStr = getShanghaiTodayStr();
-            const navDateProfitStr = getDateStr(fund.navDate);
-            const officialNav0 = parseFloat(fund.currentNav);
-            const dispNav0 = parseFloat(getDisplayNav(fund));
-            const nav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0)) ? officialNav0 : dispNav0;
-            if (!Number.isFinite(nav)) return { ok: false };
-            const m = calcPositionMetrics(pos, nav);
-            if (!m || !m.ok) return { ok: false };
-            return { ok: true, invested: m.invested, value: m.value, profit: m.profit, profitPct: m.profitPct };
+            const officialNav0 = parseFloat(displayNav);
+            const profitNav0 = parseFloat(getDisplayNav(fund));
+            const profitNav = (navDateProfitStr === todayProfitStr && Number.isFinite(officialNav0))
+                ? officialNav0
+                : (Number.isFinite(profitNav0)
+                    ? profitNav0
+                    : ((status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全')
+                        ? parseFloat(fund?.estimatedNav || fund?.currentNav)
+                        : parseFloat(fund?.currentNav)));
+
+            const navForHoldingValue0 = Number.isFinite(officialNav0) ? officialNav0 : profitNav;
+            if (!Number.isFinite(navForHoldingValue0)) return { ok: false };
+            const mv0 = calcPositionMetrics(pos, navForHoldingValue0);
+            if (!mv0 || !mv0.ok) return { ok: false };
+
+            let out = { ok: true, invested: mv0.invested, value: mv0.value, profit: mv0.profit, profitPct: mv0.profitPct };
+
+            if (options && options.includeManualOverride) {
+                const mv = getManualSummaryValue(fund);
+                const mp = getManualSummaryProfit(fund);
+                if (mv !== null) out.value = mv;
+                if (mp !== null) {
+                    out.profit = mp;
+                    const invX = Number(pos.invested);
+                    out.profitPct = (Number.isFinite(invX) && invX > 0) ? (out.profit / invX * 100) : NaN;
+                }
+            }
+
+            return out;
+        }
+
+        function calcHoldingMetricsForSummary(fund) {
+            return calcHoldingMetricsUnified(fund, { includeManualOverride: false });
         }
 
         function calcAllPositionSummary() {
@@ -5300,7 +5336,7 @@
             let hasAny = false;
 
             for (const f of (Array.isArray(funds) ? funds : [])) {
-                const m = calcHoldingMetricsForSummary(f);
+                const m = calcHoldingMetricsUnified(f, { includeManualOverride: true });
                 if (!m || !m.ok) continue;
                 hasAny = true;
                 totalValue += Number(m.value) || 0;
@@ -5678,6 +5714,114 @@
         let _summaryTagsKeyCache = '';
         let _summarySelectedTag = null;
         let _summaryTagsClickBound = false;
+        let _summaryManualEditMode = false;
+        let _summaryManualDraft = {};
+        let _summaryManualLockedColWidths = null;
+
+        function captureSummaryColumnWidths() {
+            const table = document.querySelector('#summaryScroll table');
+            if (!table) return null;
+            const ths = table.querySelectorAll('thead th');
+            if (!ths || ths.length === 0) return null;
+            const widths = [];
+            ths.forEach(th => widths.push(th.getBoundingClientRect().width));
+            return widths.every(w => Number.isFinite(w) && w > 0) ? widths : null;
+        }
+
+        function clearSummaryColumnWidthLocks() {
+            const table = document.querySelector('#summaryScroll table');
+            if (!table) return;
+            table.style.tableLayout = '';
+            table.querySelectorAll('thead th').forEach(th => { th.style.width = ''; th.style.minWidth = ''; th.style.maxWidth = ''; });
+            table.querySelectorAll('tbody tr').forEach(tr => {
+                tr.querySelectorAll('td').forEach(td => { td.style.width = ''; td.style.minWidth = ''; td.style.maxWidth = ''; });
+            });
+        }
+
+        function applySummaryColumnWidthLocks() {
+            if (!_summaryManualEditMode) return;
+            if (!Array.isArray(_summaryManualLockedColWidths) || _summaryManualLockedColWidths.length === 0) return;
+            const table = document.querySelector('#summaryScroll table');
+            if (!table) return;
+            const widths = _summaryManualLockedColWidths;
+            table.style.tableLayout = 'fixed';
+            const ths = table.querySelectorAll('thead th');
+            ths.forEach((th, idx) => {
+                const w = widths[idx];
+                if (!Number.isFinite(w) || w <= 0) return;
+                const px = `${Math.round(w)}px`;
+                th.style.width = px;
+                th.style.minWidth = px;
+                th.style.maxWidth = px;
+            });
+            table.querySelectorAll('tbody tr').forEach(tr => {
+                const tds = tr.querySelectorAll('td');
+                tds.forEach((td, idx) => {
+                    const w = widths[idx];
+                    if (!Number.isFinite(w) || w <= 0) return;
+                    const px = `${Math.round(w)}px`;
+                    td.style.width = px;
+                    td.style.minWidth = px;
+                    td.style.maxWidth = px;
+                });
+            });
+        }
+
+        function toggleSummaryManualEdit() {
+            if (!_summaryManualEditMode) {
+                _summaryManualLockedColWidths = captureSummaryColumnWidths();
+            }
+
+            _summaryManualEditMode = !_summaryManualEditMode;
+            if (!_summaryManualEditMode) {
+                _summaryManualDraft = {};
+                _summaryManualLockedColWidths = null;
+                clearSummaryColumnWidthLocks();
+            }
+            const btn = document.getElementById('summaryManualEditBtn');
+            if (btn) {
+                btn.classList.toggle('active', _summaryManualEditMode);
+                btn.textContent = _summaryManualEditMode ? '✔' : '⚙';
+                btn.title = _summaryManualEditMode ? '保存自定义编辑' : '自定义编辑';
+            }
+            renderSummaryView();
+        }
+
+        function saveSummaryManualEdits() {
+            const entries = _summaryManualDraft && typeof _summaryManualDraft === 'object' ? Object.entries(_summaryManualDraft) : [];
+            for (const [code, v] of entries) {
+                if (!code) continue;
+                const fund = funds.find(x => x && x.code === code);
+                if (!fund) continue;
+                const valueStr = (v && v.value !== undefined) ? String(v.value).trim() : '';
+                const profitStr = (v && v.profit !== undefined) ? String(v.profit).trim() : '';
+
+                fund._manualSummaryValue = valueStr === '' ? null : Number(valueStr);
+                fund._manualSummaryProfit = profitStr === '' ? null : Number(profitStr);
+                if (fund._manualSummaryValue !== null && !Number.isFinite(Number(fund._manualSummaryValue))) fund._manualSummaryValue = null;
+                if (fund._manualSummaryProfit !== null && !Number.isFinite(Number(fund._manualSummaryProfit))) fund._manualSummaryProfit = null;
+            }
+
+            saveFunds();
+            _summaryManualDraft = {};
+            _summaryManualEditMode = false;
+            _summaryManualLockedColWidths = null;
+            clearSummaryColumnWidthLocks();
+            const btn = document.getElementById('summaryManualEditBtn');
+            if (btn) {
+                btn.classList.remove('active');
+                btn.textContent = '⚙';
+                btn.title = '自定义编辑';
+            }
+            renderFundList();
+            const main0 = document.querySelector('.main-content');
+            if (main0 && main0.classList.contains('summary-mode')) renderSummaryView();
+            if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
+            if (selectedFund?.code) {
+                const f0 = funds.find(x => x && x.code === selectedFund.code);
+                if (f0) updateMainDisplay(f0);
+            }
+        }
 
         function setSummarySort(key) {
             summarySortKey = key || 'profit_desc';
@@ -5733,6 +5877,18 @@
             fromEl.textContent = from ? ('——' + from) : '——';
         }
 
+        function getManualSummaryValue(fund) {
+            if (!fund) return null;
+            const v = (fund._manualSummaryValue === null || fund._manualSummaryValue === undefined) ? null : Number(fund._manualSummaryValue);
+            return Number.isFinite(v) ? v : null;
+        }
+
+        function getManualSummaryProfit(fund) {
+            if (!fund) return null;
+            const v = (fund._manualSummaryProfit === null || fund._manualSummaryProfit === undefined) ? null : Number(fund._manualSummaryProfit);
+            return Number.isFinite(v) ? v : null;
+        }
+
         function renderSummaryView() {
             const tbody = document.getElementById('summaryTableBody');
             const tagsEl = document.getElementById('summaryTags');
@@ -5774,16 +5930,16 @@
                 const pos = getPosition(f);
                 if (!pos || !pos.has) continue;
 
-                const m = calcHoldingMetricsForSummary(f);
+                const m = calcHoldingMetricsUnified(f, { includeManualOverride: true });
                 if (!m || !m.ok) continue;
 
                 const dp = calcDailyProfitForFund(f);
                 const dailyProfit0 = (dp && dp.ok) ? (Number(dp.dailyProfit) || 0) : NaN;
                 const prevValue0 = (dp && dp.ok) ? Number(dp.prevValue) : NaN;
 
-                const profit0 = Number(m.profit) || 0;
-                const profitPct0 = Number(m.profitPct);
-                const value0 = Number(m.value) || 0;
+                let profit0 = Number(m.profit) || 0;
+                let profitPct0 = Number(m.profitPct);
+                let value0 = Number(m.value) || 0;
 
                 totalValue += value0;
                 totalProfit += profit0;
@@ -5985,11 +6141,21 @@
                 const dgStr = Number.isFinite(dg0) ? ((dg0 >= 0 ? '+' : '') + dg0.toFixed(2) + '%') : '--';
                 const holdingDaysStr = Number.isFinite(r.holdingDays) ? String(Math.round(r.holdingDays)) : '--';
 
+                const draft = _summaryManualDraft && code ? (_summaryManualDraft[code] || {}) : {};
+                const editValue = (draft.value !== undefined) ? String(draft.value) : String(r.value.toFixed(2));
+                const editProfit = (draft.profit !== undefined) ? String(draft.profit) : String(r.profit.toFixed(2));
+                const valueCell = _summaryManualEditMode
+                    ? `<input class="mono summary-edit-input" data-field="value" data-code="${code}" value="${editValue}">`
+                    : `¥${r.value.toFixed(2)}`;
+                const profitCell = _summaryManualEditMode
+                    ? `<input class="mono summary-edit-input" data-field="profit" data-code="${code}" value="${editProfit}">`
+                    : `<div>¥${r.profit.toFixed(2)}</div><div class="summary-cell-sub mono ${pctCls}">${profitPctStr}</div>`;
+
                 return `
                     <tr class="summary-row" data-code="${code}">
                         <td><div class="summary-fund-name" style="font-weight:900;">${tagIcon}${name}</div><div class="mono summary-fund-code" style="color:var(--gray-500); font-size:0.75rem;">${code}</div><div class="mono summary-fund-value" style="color:var(--gray-500); font-size:0.75rem; display:none;">¥${r.value.toFixed(2)}</div></td>
-                        <td class="mono">¥${r.value.toFixed(2)}</td>
-                        <td class="mono ${profitCls}"><div>¥${r.profit.toFixed(2)}</div><div class="summary-cell-sub mono ${pctCls}">${profitPctStr}</div></td>
+                        <td class="mono">${valueCell}</td>
+                        <td class="mono ${profitCls}">${profitCell}</td>
                         <td class="mono ${dailyCls}"><div>${dailyStr}</div><div class="summary-cell-sub mono ${dgCls}">${dgStr}</div></td>
                         <td class="mono">${holdingDaysStr}</td>
                     </tr>
@@ -5998,10 +6164,41 @@
 
             tbody.querySelectorAll('tr.summary-row[data-code]').forEach(tr => {
                 tr.addEventListener('click', () => {
+                    if (_summaryManualEditMode) return;
                     const code = tr.getAttribute('data-code');
                     if (code) selectFundFromOverview(code);
                 });
             });
+
+            if (_summaryManualEditMode) {
+                const btn = document.getElementById('summaryManualEditBtn');
+                if (btn) {
+                    btn.onclick = () => saveSummaryManualEdits();
+                }
+                tbody.querySelectorAll('input[data-field][data-code]').forEach(inp => {
+                    inp.addEventListener('click', (ev) => ev?.stopPropagation?.());
+                    inp.addEventListener('keydown', (ev) => {
+                        if (ev && ev.key === 'Enter') {
+                            ev.preventDefault();
+                            saveSummaryManualEdits();
+                        }
+                    });
+                    inp.addEventListener('input', () => {
+                        const code = inp.getAttribute('data-code') || '';
+                        const field = inp.getAttribute('data-field') || '';
+                        if (!code || !field) return;
+                        if (!_summaryManualDraft[code]) _summaryManualDraft[code] = {};
+                        _summaryManualDraft[code][field] = inp.value;
+                    });
+                });
+
+                applySummaryColumnWidthLocks();
+            } else {
+                const btn = document.getElementById('summaryManualEditBtn');
+                if (btn) {
+                    btn.onclick = () => toggleSummaryManualEdit();
+                }
+            }
         }
 
         // 返回概览视图
