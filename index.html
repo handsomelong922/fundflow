@@ -5843,7 +5843,7 @@
             const tbody = document.getElementById('holdingsTableBody');
             const tags = document.getElementById('sectorTags');
             const status0 = getMarketStatus();
-            const blockBaidu0 = !!(status0 && (status0.canRealtimeUpdate || status0.reason === '午间休市'));
+            const blockBaidu0 = false;
 
             // updateOnly: 只更新涨跌幅，不要重绘 DOM（避免闪跳）
             if (options.updateOnly) {
