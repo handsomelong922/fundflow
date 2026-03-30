@@ -414,7 +414,7 @@
         .source-stats-table .success-rate.medium { color: #f59e0b; }
         .source-stats-table .success-rate.low { color: #ef4444; }
 
-        .summary-sort { padding: 8px 10px; border: 2px solid var(--gray-200); border-radius: 12px; font-size: 0.8125rem; background: rgba(255,255,255,0.95); font-weight: 700; width: auto; }
+        .summary-sort { height: 38px; padding: 0 10px; box-sizing: border-box; border: 2px solid var(--gray-200); border-radius: 12px; font-size: 0.8125rem; background: rgba(255,255,255,0.95); font-weight: 700; width: auto; }
 
         .summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 12px 0 16px; }
         .summary-metric { background: rgba(255,255,255,0.95); border: 2px solid var(--gray-200); border-radius: 16px; padding: 16px 16px; }
@@ -427,7 +427,7 @@
         .summary-table-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .summary-table-header .table-title { font-size: inherit; font-weight: inherit; }
         .summary-table-header .summary-sort { margin-left: auto; flex: 0 0 auto; }
-        .summary-edit-btn { width: 40px; height: 40px; padding: 0; border-radius: 12px; border: 2px solid var(--gray-200); background: rgba(255,255,255,0.95); font-size: 1.0rem; font-weight: 900; color: var(--gray-700); cursor: pointer; flex: 0 0 auto; transition: border-color 0.2s, background 0.2s, color 0.2s; }
+        .summary-edit-btn { width: 38px; height: 38px; padding: 0; border-radius: 12px; border: 2px solid var(--gray-200); background: rgba(255,255,255,0.95); font-size: 1.0rem; font-weight: 900; color: var(--gray-700); cursor: pointer; flex: 0 0 auto; transition: border-color 0.2s, background 0.2s, color 0.2s; }
         .summary-edit-btn:hover { border-color: var(--primary-light); }
         .summary-edit-btn.active { border-color: var(--primary); background: white; color: var(--primary); }
 
@@ -444,8 +444,8 @@
 
             .summary-container { padding: 14px; border-radius: 16px; }
             .summary-container .table-header { font-size: 0.95rem; margin-bottom: 8px; padding-bottom: 8px; }
-            .summary-container .summary-sort { font-size: 0.75rem; padding: 5px 6px; border-radius: 10px; width: auto; white-space: nowrap; }
-            .summary-container .summary-edit-btn { width: 34px; height: 34px; border-radius: 10px; font-size: 0.95rem; }
+            .summary-container .summary-sort { height: 32px; font-size: 0.75rem; padding: 0 6px; border-radius: 10px; width: auto; white-space: nowrap; }
+            .summary-container .summary-edit-btn { width: 32px; height: 32px; border-radius: 10px; font-size: 0.95rem; }
 
             /* 仅保留：基金(1)、持仓金额(2)、持仓收益(3)、当日盈亏(4) */
             #summaryScroll th:nth-child(2), #summaryScroll td:nth-child(2),
@@ -456,9 +456,25 @@
             #summaryScroll th:nth-child(3), #summaryScroll td:nth-child(3) { width: 22%; }
             #summaryScroll th:nth-child(4), #summaryScroll td:nth-child(4) { width: 22%; }
 
+            body.summary-manual-editing #summaryScroll th:nth-child(2),
+            body.summary-manual-editing #summaryScroll td:nth-child(2) { display: table-cell; }
+
+            body.summary-manual-editing #summaryScroll th:nth-child(4),
+            body.summary-manual-editing #summaryScroll td:nth-child(4) { display: none; }
+
+            /* 编辑模式：三列布局（基金/持仓金额/持仓收益） */
+            body.summary-manual-editing #summaryScroll th:nth-child(1),
+            body.summary-manual-editing #summaryScroll td:nth-child(1) { width: 48%; }
+            body.summary-manual-editing #summaryScroll th:nth-child(2),
+            body.summary-manual-editing #summaryScroll td:nth-child(2) { width: 26%; }
+            body.summary-manual-editing #summaryScroll th:nth-child(3),
+            body.summary-manual-editing #summaryScroll td:nth-child(3) { width: 26%; }
+
             /* 数值列：不换行，超出省略号，避免撑出横向滚动 */
+            #summaryScroll td:nth-child(2),
             #summaryScroll td:nth-child(3),
             #summaryScroll td:nth-child(4) { overflow: hidden; }
+            #summaryScroll td:nth-child(2) *,
             #summaryScroll td:nth-child(3) *,
             #summaryScroll td:nth-child(4) * {
                 white-space: nowrap;
@@ -5770,6 +5786,7 @@
             }
 
             _summaryManualEditMode = !_summaryManualEditMode;
+            document.body.classList.toggle('summary-manual-editing', _summaryManualEditMode);
             if (!_summaryManualEditMode) {
                 _summaryManualDraft = {};
                 _summaryManualLockedColWidths = null;
@@ -5790,18 +5807,24 @@
                 if (!code) continue;
                 const fund = funds.find(x => x && x.code === code);
                 if (!fund) continue;
-                const valueStr = (v && v.value !== undefined) ? String(v.value).trim() : '';
-                const profitStr = (v && v.profit !== undefined) ? String(v.profit).trim() : '';
 
-                fund._manualSummaryValue = valueStr === '' ? null : Number(valueStr);
-                fund._manualSummaryProfit = profitStr === '' ? null : Number(profitStr);
-                if (fund._manualSummaryValue !== null && !Number.isFinite(Number(fund._manualSummaryValue))) fund._manualSummaryValue = null;
-                if (fund._manualSummaryProfit !== null && !Number.isFinite(Number(fund._manualSummaryProfit))) fund._manualSummaryProfit = null;
+                if (v && v.value !== undefined) {
+                    const valueStr = String(v.value).trim();
+                    fund._manualSummaryValue = valueStr === '' ? null : Number(valueStr);
+                    if (fund._manualSummaryValue !== null && !Number.isFinite(Number(fund._manualSummaryValue))) fund._manualSummaryValue = null;
+                }
+
+                if (v && v.profit !== undefined) {
+                    const profitStr = String(v.profit).trim();
+                    fund._manualSummaryProfit = profitStr === '' ? null : Number(profitStr);
+                    if (fund._manualSummaryProfit !== null && !Number.isFinite(Number(fund._manualSummaryProfit))) fund._manualSummaryProfit = null;
+                }
             }
 
             saveFunds();
             _summaryManualDraft = {};
             _summaryManualEditMode = false;
+            document.body.classList.remove('summary-manual-editing');
             _summaryManualLockedColWidths = null;
             clearSummaryColumnWidthLocks();
             const btn = document.getElementById('summaryManualEditBtn');
@@ -5935,8 +5958,8 @@
                 const prevValue0 = (dp && dp.ok) ? Number(dp.prevValue) : NaN;
 
                 let profit0 = Number(m.profit) || 0;
-                let profitPct0 = Number(m.profitPct);
                 let value0 = Number(m.value) || 0;
+                let profitPct0 = (Number.isFinite(value0) && value0 > 0) ? (profit0 / value0 * 100) : NaN;
 
                 totalValue += value0;
                 totalProfit += profit0;
