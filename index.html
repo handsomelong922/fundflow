@@ -4289,7 +4289,17 @@
                         : `当日涨幅 <span class="day-growth-source official">官方</span>`;
                     chgEl.style.fontSize = '';
                 } else {
-                    chgEl.innerHTML = '--';
+                    if (Number.isFinite(chgNum)) {
+                        const bnDate0 = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
+                        const offDate0 = (fund && fund._officialDayGrowthDate) ? String(fund._officialDayGrowthDate) : '';
+                        const dateStr0 = bnDate0 || offDate0 || (getOfficialDayGrowthFromHistoryWithDate(fund).date || '');
+                        const offDate = dateStr0 ? dateStr0.slice(5) : '';
+                        chgEl.innerHTML = offDate
+                            ? `当日涨幅 ${offDate} 15:00 <span class="day-growth-source official">官方</span>`
+                            : `当日涨幅 <span class="day-growth-source official">官方</span>`;
+                    } else {
+                        chgEl.innerHTML = '--';
+                    }
                     chgEl.style.fontSize = '';
                 }
             }
