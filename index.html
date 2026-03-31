@@ -3068,6 +3068,32 @@
             updateAllPositionSummary();
         }
 
+        function updateFundListCardDisplay(fund) {
+            if (!fund || !fund.code) return;
+            const listEl = document.getElementById('fundList');
+            if (!listEl) return;
+            const item = listEl.querySelector(`.fund-item[data-code="${fund.code}"]`);
+            if (!item) return;
+
+            const snap = getFundCardDisplaySnapshot(fund);
+            const displayNav = snap.displayNav;
+            const badgeVal = snap.badgeVal;
+            const badgeOk = snap.badgeOk;
+
+            const badge = item.querySelector('.fund-code-chg');
+            if (badge) {
+                badge.className = `fund-code-chg ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'neutral'}`;
+                badge.textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
+            }
+
+            const metricValues = item.querySelectorAll('.metric-value');
+            if (metricValues[0]) metricValues[0].textContent = displayNav;
+            if (metricValues[1]) {
+                metricValues[1].className = `metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}`;
+                metricValues[1].textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
+            }
+        }
+
         // 事件委托处理函数
         function handleFundListClick(e) {
             const item = e.target.closest('.fund-item');
@@ -3129,6 +3155,8 @@
                     if (currentTimeRange === 'realtime') updateRealtimeChart();
                 }
             }
+
+            updateFundListCardDisplay(fund);
         }
 
         // 只初始化可见区域的图表（懒加载）
@@ -3766,7 +3794,9 @@
                 // 防回退：如果接口返回了更早的 gztime（旧数据），不要覆盖最新显示与曲线
                 const sh0 = getShanghaiTimeParts();
                 const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
-                const gzDateStr = getDateStr(data.gztime);
+                const gzDateStrRaw = getDateStr(data.gztime);
+                const gzTimeHasClock0 = (data && typeof data.gztime === 'string') ? /\b\d{1,2}:\d{2}\b/.test(data.gztime) : false;
+                const gzDateStr = gzDateStrRaw || (gzTimeHasClock0 ? todayStr0 : '');
                 // 新交易日/跨天：重置 last idx，避免昨天的 idx=241 导致今天早盘 acceptGz 永远为 false
                 if (gzDateStr && gzDateStr !== (fund._lastGzDate || '')) {
                     fund._lastGzDate = gzDateStr;
@@ -4174,7 +4204,9 @@
                     // 今日尚未出官方净值：盘后也展示“今日最后一次估算值”
                     const estDateStr = getDateStr(fund.estimatedTime);
                     const estNavNum = parseFloat(fund.estimatedNav);
-                    const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(estNavNum) && estNavNum > 0;
+                    const status0 = getMarketStatus();
+                    const canShowEst0 = !!(status0 && (status0.reason === '盘前' || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
+                    const hasTodayEst = (Number.isFinite(estNavNum) && estNavNum > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
                     if (hasTodayEst) {
                         const chgNum = getDisplayDayGrowth(fund);
