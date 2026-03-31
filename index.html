@@ -7510,6 +7510,7 @@
         let officialRefreshCursor = 0;
         let lastOfficialRefreshAt = 0;
         let _autoResetDate = '';
+        let _lastMarketStatusReason = '';
 
         function getShanghaiTodayStr() {
             const sh = getShanghaiTimeParts();
@@ -7584,6 +7585,33 @@
                 refreshLock = refreshLock.then(async () => {
                     const status = getMarketStatus();
                     const now = Date.now();
+
+                    const prevReason0 = _lastMarketStatusReason;
+                    const currReason0 = (status && status.reason) ? String(status.reason) : '';
+                    if (currReason0 !== prevReason0) {
+                        _lastMarketStatusReason = currReason0;
+                        updateMarketStatusUI();
+
+                        // 午休结束（13:00）切回交易中：立即触发一次估值拉取与渲染，避免概览页卡片长时间停留在午休前的数据
+                        if (prevReason0 === '午间休市' && status && status.canRealtimeUpdate && Array.isArray(funds) && funds.length > 0) {
+                            const f0 = funds[fundRefreshCursor % funds.length];
+                            if (f0 && !isFundFrozenForToday(f0)) {
+                                await fetchFundData(f0, { suppressRender: true });
+                                renderFundList();
+                                const mainContent = document.querySelector('.main-content');
+                                if (mainContent && mainContent.classList.contains('overview-mode')) {
+                                    renderFundOverview();
+                                } else if (mainContent && mainContent.classList.contains('summary-mode')) {
+                                    renderSummaryView();
+                                }
+                                if (selectedFund?.code === f0.code) {
+                                    selectedFund = f0;
+                                    updateMainDisplay(f0);
+                                    if (currentTimeRange === 'realtime') updateRealtimeChart();
+                                }
+                            }
+                        }
+                    }
 
                     resetAutoFreezeIfNeeded();
 
