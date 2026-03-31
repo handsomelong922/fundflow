@@ -2922,6 +2922,36 @@
             }
         });
 
+        function getFundCardDisplaySnapshot(fund) {
+            let displayNav = getDisplayNav(fund);
+            let badgeVal = getDisplayDayGrowth(fund);
+            let badgeOk = Number.isFinite(badgeVal);
+            let cleared = false;
+
+            const status = getMarketStatus();
+            const sh = getShanghaiTimeParts();
+            const mins0 = sh.hour * 60 + sh.minute;
+            const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
+            const navDateStr = getDateStr(fund && fund.navDate);
+            const estNav0 = Number(fund && fund.estimatedNav);
+            const estDateStr = getDateStr(fund && fund.estimatedTime);
+            const hasTodayOfficial0 = (navDateStr === todayStr);
+
+            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
+
+            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
+            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst0) {
+                displayNav = '--';
+                badgeOk = false;
+                badgeVal = NaN;
+                cleared = true;
+            }
+
+            return { displayNav, badgeVal, badgeOk, cleared };
+        }
+
         function renderFundList() {
             const listEl = document.getElementById('fundList');
             if (funds.length === 0) { 
@@ -2941,9 +2971,10 @@
                 
                 tempDiv.innerHTML = funds.map(fund => {
                     const isCollapsed = fund._cardCollapsed !== false;
-                    const displayNav = getDisplayNav(fund);
-                    const badgeVal = getDisplayDayGrowth(fund);
-                    const badgeOk = Number.isFinite(badgeVal);
+                    const snap = getFundCardDisplaySnapshot(fund);
+                    const displayNav = snap.displayNav;
+                    const badgeVal = snap.badgeVal;
+                    const badgeOk = snap.badgeOk;
                     return `
                     <div class="fund-item ${selectedFund?.code === fund.code ? 'active' : ''} ${isCollapsed ? 'card-collapsed' : 'card-expanded'}" data-code="${fund.code}">
                         <div class="fund-header" onclick="toggleFundCard('${fund.code}', event)">
@@ -2991,9 +3022,10 @@
                     existingItems.forEach((item, idx) => {
                         const fund = funds[idx];
                         const isCollapsed = fund._cardCollapsed !== false;
-                        const displayNav = getDisplayNav(fund);
-                        const badgeVal = getDisplayDayGrowth(fund);
-                        const badgeOk = Number.isFinite(badgeVal);
+                        const snap = getFundCardDisplaySnapshot(fund);
+                        const displayNav = snap.displayNav;
+                        const badgeVal = snap.badgeVal;
+                        const badgeOk = snap.badgeOk;
                         
                         // 更新激活状态
                         item.classList.toggle('active', selectedFund?.code === fund.code);
@@ -5141,9 +5173,9 @@
             const dg0 = getDisplayDayGrowth(fund);
             const usingEstNow0 = !hasTodayOfficial0 && hasTodayEst0 && (String(fund && fund._dayGrowthSource) === 'est' || (navDateStr !== todayStr));
 
-            // 盘前（09:15-09:30）：今日估值已到但今日官方未披露 -> 清空当日盈亏。
+            // 盘前（09:15-09:30）：若今日估值未到且今日官方未披露 -> 清空当日盈亏；估值已到则继续按净值差计算。
             const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
-            if (isPreOpen0 && hasTodayEst0 && !hasTodayOfficial0) {
+            if (isPreOpen0 && !hasTodayEst0 && !hasTodayOfficial0) {
                 return { ok: false };
             }
 
@@ -5550,15 +5582,17 @@
             `;
             
             tempDiv.innerHTML = summaryHtml + funds.map(fund => {
-                const displayNav = getDisplayNav(fund);
-                const dayGrowth = getDisplayDayGrowth(fund);
-                const isPositive = dayGrowth >= 0;
+                const snap = getFundCardDisplaySnapshot(fund);
+                const displayNav = snap.displayNav;
+                const dayGrowth = snap.badgeVal;
+                const badgeOk = snap.badgeOk;
+                const isPositive = badgeOk && dayGrowth >= 0;
                 const isOfficial0 = (fund && String(fund._dayGrowthSource || '') === 'official');
-                const officialTrendCls0 = isOfficial0 && Number.isFinite(Number(dayGrowth))
+                const officialTrendCls0 = (!snap.cleared) && isOfficial0 && Number.isFinite(Number(dayGrowth))
                     ? (Number(dayGrowth) >= 0 ? ' official-up' : ' official-down')
                     : '';
 
-                if (Number.isFinite(dayGrowth)) {
+                if ((!snap.cleared) && badgeOk) {
                     allDayGrowthSum += dayGrowth;
                     allDayGrowthCount++;
                 }
@@ -5579,7 +5613,7 @@
                 // 获取持仓信息
                 const pos = getPosition(fund);
                 let positionInfo = '';
-                if (pos.has) {
+                if (pos.has && !snap.cleared) {
                     holdingCount++;
                     const dp = calcDailyProfitForFund(fund);
                     if (dp.ok) {
@@ -5619,8 +5653,8 @@
                         </div>
                         <div class="overview-card-metric">
                             <div class="overview-card-metric-label">日涨跌幅</div>
-                            <div class="overview-card-metric-value ${isPositive ? 'positive' : 'negative'}">
-                                ${Number.isFinite(dayGrowth) ? (dayGrowth >= 0 ? '+' : '') + dayGrowth.toFixed(2) + '%' : '--'}
+                            <div class="overview-card-metric-value ${badgeOk ? (isPositive ? 'positive' : 'negative') : ''}">
+                                ${badgeOk ? (dayGrowth >= 0 ? '+' : '') + dayGrowth.toFixed(2) + '%' : '--'}
                             </div>
                         </div>
                         ${positionInfo}
