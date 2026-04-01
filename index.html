@@ -4229,16 +4229,6 @@
             const navDateStr2 = getDateStr(fund.navDate);
             let showUpdateTime = fund.lastUpdateTime || '--';
             let useDelay = true;
-            // 收盘数据已到：只要展示为 15:00，就不再显示“延迟xx分钟”（避免盘后补全/口径差异造成误导）
-            if (typeof showUpdateTime === 'string') {
-                const m = showUpdateTime.match(/\b(\d{1,2}):(\d{2})$/);
-                if (m) {
-                    const hh = parseInt(m[1]);
-                    const mm = parseInt(m[2]);
-                    const mins = hh * 60 + mm;
-                    if (Number.isFinite(mins) && mins >= 900) useDelay = false;
-                }
-            }
             // 延迟分钟口径：仅基于估值源时间（gztime/estimatedTime），不要用“更新于”(请求完成时间)去算
             const estTimeForDelay = (fund && typeof fund.estimatedTime === 'string') ? fund.estimatedTime : '';
             if (navDateStr2 === todayStr2) {
@@ -4249,8 +4239,19 @@
                 const estDateStr = getDateStr(estTimeForDelay);
                 if (estDateStr && estDateStr !== todayStr2) useDelay = false;
             }
+            // 盘后：若估值本身已到 15:00（收盘点），则不再显示延迟徽标
+            if (useDelay) {
+                const stDelay0 = getMarketStatus();
+                if (stDelay0 && stDelay0.reason === '盘后') {
+                    const m0 = (estTimeForDelay || '').match(/\b(\d{1,2}):(\d{2})\b/);
+                    const hh0 = m0 ? parseInt(m0[1]) : NaN;
+                    const mm0 = m0 ? parseInt(m0[2]) : NaN;
+                    const mins0 = (Number.isFinite(hh0) && Number.isFinite(mm0)) ? (hh0 * 60 + mm0) : NaN;
+                    if (Number.isFinite(mins0) && mins0 >= 900) useDelay = false;
+                }
+            }
             const delayMin = useDelay ? getGzDelayMinutes(estTimeForDelay) : null;
-            const delayBadge = (useDelay && Number.isFinite(delayMin) && delayMin >= 2)
+            const delayBadge = (useDelay && Number.isFinite(delayMin) && delayMin >= 1)
                 ? ` <span class="gz-delay-badge" title="估值延迟${delayMin}分钟"><span class="icon">⏱</span>${delayMin}min</span>`
                 : '';
             document.getElementById('updateTime').innerHTML = '更新于 ' + showUpdateTime + delayBadge;
