@@ -284,7 +284,8 @@
         .overview-card.official-up:hover { border-color: rgba(239, 68, 68, 0.45); box-shadow: 0 10px 26px rgba(239, 68, 68, 0.10); }
         .overview-card.official-down:hover { border-color: rgba(16, 185, 129, 0.45); box-shadow: 0 10px 26px rgba(16, 185, 129, 0.10); }
         .overview-card-info { min-width: 0; }
-        .overview-card-name { font-size: 1.125rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .overview-card-name { font-size: 1.125rem; font-weight: 700; color: var(--gray-900); margin-bottom: 6px; display: flex; align-items: center; min-width: 0; line-height: 1.2; }
+        .overview-card-name-text { min-width: 0; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
         .overview-card-code { font-size: 0.8125rem; color: var(--gray-500); font-family: 'JetBrains Mono', monospace; }
         .overview-card-metric { display: flex; flex-direction: column; align-items: flex-end; min-width: 100px; }
         .overview-card-metric-label { font-size: 0.6875rem; color: var(--gray-600); margin-bottom: 4px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.04em; }
@@ -318,6 +319,8 @@
         .update-time { font-size: 0.8125rem; color: var(--gray-600); background: var(--gray-50); padding: 6px 14px; border-radius: 10px; border: 1px solid var(--gray-200); }
         .gz-delay-badge { display: inline-flex; align-items: center; justify-content: center; height: 18px; padding: 0 6px; margin-left: 8px; border-radius: 999px; border: 1px solid rgba(139,92,246,0.22); background: rgba(139,92,246,0.10); color: #7c3aed; font-size: 0.6875rem; font-weight: 800; line-height: 18px; vertical-align: middle; user-select: none; }
         .gz-delay-badge .icon { display: inline-flex; align-items: center; justify-content: center; height: 18px; font-size: 0.75rem; line-height: 18px; margin-right: 3px; }
+        .favorite-inline { display: inline-flex; align-items: center; justify-content: center; width: 1.15em; height: 1.15em; border: none; background: transparent; cursor: pointer; padding: 0; margin-left: 0.35em; line-height: 1; color: #a1a1aa; font-size: inherit; vertical-align: middle; }
+        .favorite-inline.favorited { color: #f59e0b; }
         .remind-chip { color: #b45309; background: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.22); cursor: pointer; user-select: none; font-weight: 700; }
         .remind-chip.active { color: #047857; background: rgba(16, 185, 129, 0.10); border-color: rgba(16, 185, 129, 0.22); }
         .remind-chip.fired { color: var(--gray-700); background: var(--gray-50); border-color: var(--gray-200); }
@@ -809,7 +812,7 @@
                 <button class="indices-toggle" onclick="toggleIndices()">
                     <div class="indices-toggle-left">
                         <div class="indices-title">
-                            <span>📊</span>
+                            <span>🌍</span>
                             <span>市场指数</span>
                         </div>
                     </div>
@@ -2952,24 +2955,66 @@
             return { displayNav, badgeVal, badgeOk, cleared };
         }
 
+        function getFundsForDisplay() {
+            const arr = Array.isArray(funds) ? funds : [];
+            return arr
+                .map((f, i) => ({ f, i }))
+                .sort((a, b) => {
+                    const af = !!(a.f && a.f._favorite);
+                    const bf = !!(b.f && b.f._favorite);
+                    if (af !== bf) return af ? -1 : 1;
+                    if (af && bf) {
+                        const at = Number(a.f && a.f._favoriteAt);
+                        const bt = Number(b.f && b.f._favoriteAt);
+                        if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+                        if (Number.isFinite(at) && !Number.isFinite(bt)) return -1;
+                        if (!Number.isFinite(at) && Number.isFinite(bt)) return 1;
+                    }
+                    return a.i - b.i;
+                })
+                .map(x => x.f);
+        }
+
+        function toggleFavoriteByCode(code) {
+            const fund = funds.find(f => f && f.code === code);
+            if (!fund) return;
+            const next = !fund._favorite;
+            fund._favorite = next;
+            if (next) fund._favoriteAt = Date.now();
+            else delete fund._favoriteAt;
+            saveFunds();
+            renderFundList();
+            const main0 = document.querySelector('.main-content');
+            if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
+            if (main0 && main0.classList.contains('summary-mode')) renderSummaryView();
+            if (selectedFund?.code === fund.code) updateMainDisplay(fund);
+        }
+
+        function toggleFavorite(code, event) {
+            if (event) event.stopPropagation();
+            toggleFavoriteByCode(code);
+        }
+
         function renderFundList() {
             const listEl = document.getElementById('fundList');
             if (funds.length === 0) { 
                 listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">还没有添加基金</div><div class="empty-subtext">输入基金代码开始监控</div></div>`; 
                 return; 
             }
+
+            const orderedFunds = getFundsForDisplay();
             
             // 检查是否需要完全重建（基金数量或顺序变化）
             const existingItems = Array.from(listEl.querySelectorAll('.fund-item'));
-            const needsRebuild = existingItems.length !== funds.length || 
-                                 existingItems.some((item, idx) => item.dataset.code !== funds[idx].code);
+            const needsRebuild = existingItems.length !== orderedFunds.length || 
+                                 existingItems.some((item, idx) => item.dataset.code !== orderedFunds[idx].code);
             
             if (needsRebuild) {
                 // 使用 DocumentFragment 批量操作，减少重排
                 const fragment = document.createDocumentFragment();
                 const tempDiv = document.createElement('div');
                 
-                tempDiv.innerHTML = funds.map(fund => {
+                tempDiv.innerHTML = orderedFunds.map(fund => {
                     const isCollapsed = fund._cardCollapsed !== false;
                     const snap = getFundCardDisplaySnapshot(fund);
                     const displayNav = snap.displayNav;
@@ -3020,7 +3065,7 @@
                 // 只更新数据，不重建DOM（使用批量更新）
                 requestAnimationFrame(() => {
                     existingItems.forEach((item, idx) => {
-                        const fund = funds[idx];
+                        const fund = orderedFunds[idx];
                         const isCollapsed = fund._cardCollapsed !== false;
                         const snap = getFundCardDisplaySnapshot(fund);
                         const displayNav = snap.displayNav;
@@ -3045,8 +3090,7 @@
 
                         if (nameEl) {
                             const arrow = nameEl.querySelector('.fund-collapse-arrow');
-                            nameEl.textContent = fund.name || '加载中...';
-                            if (arrow) nameEl.appendChild(arrow);
+                            nameEl.innerHTML = `${fund.name || '加载中...'}${arrow ? arrow.outerHTML : ''}`;
                         }
                         
                         if (metricValues[0]) metricValues[0].textContent = displayNav;
@@ -4039,7 +4083,7 @@
 
             const sh0 = getShanghaiTimeParts();
             const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
-            const navDateStr0 = getDateStr(displayNavDate);
+            const navDateStr0 = getDateStr(fund.navDate);
             const navChangeEl = document.getElementById('navChange');
             if (navChangeEl) {
                 if (navDateStr0 === todayStr0) {
@@ -5549,6 +5593,8 @@
             const fragment = document.createDocumentFragment();
             const tempDiv = document.createElement('div');
 
+            const orderedFunds = getFundsForDisplay();
+
             const sh0 = getShanghaiTimeParts();
             const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
             const switchedToNewDay0 = (_autoResetDate === todayStr0) && isAfter915();
@@ -5558,12 +5604,12 @@
             for (const f0 of (Array.isArray(funds) ? funds : [])) {
                 if (!f0) continue;
                 const et0 = (f0.estimatedTime || '').toString();
-                const etm0 = et0.match(/(\d{4}-\d{2}-\d{2})/);
+                const etm0 = et0.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
                 if (etm0 && etm0[1] === todayStr0) hasTodayEstimateOrUpdate0 = true;
                 const lut0 = (f0.lastUpdateTime || '').toString();
-                const lutm0 = lut0.match(/(\d{4}-\d{2}-\d{2})/);
+                const lutm0 = lut0.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
                 if (lutm0 && lutm0[1] === todayStr0) hasTodayEstimateOrUpdate0 = true;
-                const navDate0 = getDateStr(f0.navDate);
+                const navDate0 = (f0.navDate || '').toString();
                 if (navDate0 && navDate0 > latestDataDate0) latestDataDate0 = navDate0;
                 const offDate0 = (f0._officialDayGrowthDate || '').toString();
                 if (offDate0 && offDate0 > latestDataDate0) latestDataDate0 = offDate0;
@@ -5613,12 +5659,13 @@
                 </div>
             `;
             
-            tempDiv.innerHTML = summaryHtml + funds.map(fund => {
+            tempDiv.innerHTML = summaryHtml + orderedFunds.map(fund => {
                 const snap = getFundCardDisplaySnapshot(fund);
                 const displayNav = snap.displayNav;
                 const dayGrowth = snap.badgeVal;
                 const badgeOk = snap.badgeOk;
                 const isPositive = badgeOk && dayGrowth >= 0;
+                const fav0 = !!(fund && fund._favorite);
                 const isOfficial0 = (fund && String(fund._dayGrowthSource || '') === 'official');
                 const officialTrendCls0 = (!snap.cleared) && isOfficial0 && Number.isFinite(Number(dayGrowth))
                     ? (Number(dayGrowth) >= 0 ? ' official-up' : ' official-down')
@@ -5674,9 +5721,9 @@
                 }
                 
                 return `
-                    <div class="overview-card${isOfficial0 ? ' official' : ''}${officialTrendCls0}" data-code="${fund.code}">
+                    <div class="overview-card ${selectedFund?.code === fund.code ? 'active' : ''} ${isOfficial0 ? ' official' : ''}${officialTrendCls0}" data-code="${fund.code}">
                         <div class="overview-card-info">
-                            <div class="overview-card-name">${fund.name || '加载中...'}</div>
+                            <div class="overview-card-name"><span class="overview-card-name-text">${fund.name || '加载中...'}</span><button class="favorite-inline ${fav0 ? 'favorited' : ''}" type="button" onclick="toggleFavorite('${fund.code}', event)" title="收藏/取消收藏">${fav0 ? '★' : '☆'}</button></div>
                             <div class="overview-card-code">${fund.code}</div>
                         </div>
                         <div class="overview-card-metric">
