@@ -2867,6 +2867,40 @@
             
             startAutoUpdate(); 
 
+            _lastVisibleTodayStr = getShanghaiTodayStr();
+            function handleAppActivated() {
+                const todayStr0 = getShanghaiTodayStr();
+                const dayChanged0 = !!(_lastVisibleTodayStr && todayStr0 && _lastVisibleTodayStr !== todayStr0);
+                _lastVisibleTodayStr = todayStr0;
+
+                if (dayChanged0) {
+                    _autoResetDate = '';
+                }
+
+                resetAutoFreezeIfNeeded();
+                updateMarketStatusUI();
+
+                lastFundRefreshAt = 0;
+                lastIndicesRefreshAt = 0;
+                lastHoldingsRefreshAt = 0;
+                lastOfficialRefreshAt = 0;
+
+                renderFundList();
+                const main0 = document.querySelector('.main-content');
+                if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
+                if (main0 && main0.classList.contains('summary-mode')) renderSummaryView();
+                if (selectedFund?.code) updateMainDisplay(selectedFund);
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    handleAppActivated();
+                }
+            });
+            window.addEventListener('focus', () => {
+                if (!document.hidden) handleAppActivated();
+            });
+
             setTimeout(() => {
                 refreshLock = refreshLock.then(async () => {
                     if (!Array.isArray(funds) || funds.length === 0) return;
@@ -7590,6 +7624,7 @@
         let lastOfficialRefreshAt = 0;
         let _autoResetDate = '';
         let _lastMarketStatusReason = '';
+        let _lastVisibleTodayStr = '';
 
         function getShanghaiTodayStr() {
             const sh = getShanghaiTimeParts();
