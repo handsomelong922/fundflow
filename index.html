@@ -3644,8 +3644,23 @@
             // （官方净值未出前，估算口径更贴近“当前”）
             const src0 = (fund && fund._dayGrowthSource) ? String(fund._dayGrowthSource) : '';
             const v0 = parseFloat(fund && fund.dayGrowth);
-            // 仅当“今日官方净值已出”时，才允许沿用已缓存的 official 值；否则可能会把上一交易日官方错误压过今日估算
-            if (src0 === 'official' && navDateStr === todayStr && Number.isFinite(v0)) return v0;
+            // 若当前来源标记为 official，则优先与 historyCache 对齐，避免出现“日期已推进但数值仍停留在更早一日”的错位
+            if (src0 === 'official' && Number.isFinite(v0)) {
+                const offDate0 = (fund && fund._officialDayGrowthDate) ? String(fund._officialDayGrowthDate) : '';
+                const histOff0 = getOfficialDayGrowthFromHistoryWithDate(fund);
+                const histDate0 = (histOff0 && histOff0.date) ? String(histOff0.date) : '';
+                const histChg0 = Number(histOff0 && histOff0.chg);
+                if (histDate0 && Number.isFinite(histChg0) && (!offDate0 || histDate0 >= offDate0)) {
+                    if (histDate0 > offDate0 || histChg0 !== v0 || Number(fund && fund._officialDayGrowth) !== histChg0) {
+                        fund._officialDayGrowth = histChg0;
+                        fund._officialDayGrowthDate = histDate0;
+                        fund.dayGrowth = histChg0;
+                    }
+                    return histChg0;
+                }
+                // 仅当“今日官方净值已出”且 history 不可用时，才沿用缓存 official 值
+                if (navDateStr === todayStr) return v0;
+            }
 
             // fundgz_jsonp 更准：若本轮数据源为 fundgz_jsonp 且已产出今日估算，优先使用它，避免被 holdings_top10_est 覆盖
             const lastSrc0 = (fund && fund._lastFetchSource) ? String(fund._lastFetchSource) : '';
@@ -3684,6 +3699,22 @@
             if (!status.canRealtimeUpdate) {
                 const offDate = (fund && fund._officialDayGrowthDate) ? String(fund._officialDayGrowthDate) : '';
                 const offChg = Number(fund && fund._officialDayGrowth);
+                const histOff0 = getOfficialDayGrowthFromHistoryWithDate(fund);
+                const histDate0 = (histOff0 && histOff0.date) ? String(histOff0.date) : '';
+                const histChg0 = Number(histOff0 && histOff0.chg);
+                const shouldUseHist0 = histDate0 && Number.isFinite(histChg0)
+                    && (
+                        (!offDate || histDate0 > offDate)
+                        || (histDate0 === offDate && (!Number.isFinite(offChg) || histChg0 !== offChg))
+                    );
+                if (shouldUseHist0) {
+                    fund._dayGrowthSource = 'official';
+                    fund._estDayGrowthSource = '';
+                    fund.dayGrowth = histChg0;
+                    fund._officialDayGrowth = histChg0;
+                    fund._officialDayGrowthDate = histDate0;
+                    return histChg0;
+                }
                 if (offDate && Number.isFinite(offChg)) {
                     fund._dayGrowthSource = 'official';
                     fund._estDayGrowthSource = '';
