@@ -5780,10 +5780,22 @@
                 if (!f0) continue;
                 const et0 = (f0.estimatedTime || '').toString();
                 const etm0 = et0.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-                if (etm0 && etm0[1] === todayStr0) hasTodayEstimateOrUpdate0 = true;
+                if (etm0) {
+                    const y0 = etm0[1];
+                    const m0 = String(etm0[2]).padStart(2, '0');
+                    const d0 = String(etm0[3]).padStart(2, '0');
+                    const date0 = `${y0}-${m0}-${d0}`;
+                    if (date0 === todayStr0) hasTodayEstimateOrUpdate0 = true;
+                }
                 const lut0 = (f0.lastUpdateTime || '').toString();
                 const lutm0 = lut0.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-                if (lutm0 && lutm0[1] === todayStr0) hasTodayEstimateOrUpdate0 = true;
+                if (lutm0) {
+                    const y0 = lutm0[1];
+                    const m0 = String(lutm0[2]).padStart(2, '0');
+                    const d0 = String(lutm0[3]).padStart(2, '0');
+                    const date0 = `${y0}-${m0}-${d0}`;
+                    if (date0 === todayStr0) hasTodayEstimateOrUpdate0 = true;
+                }
                 const navDate0 = (f0.navDate || '').toString();
                 if (navDate0 && navDate0 > latestDataDate0) latestDataDate0 = navDate0;
                 const offDate0 = (f0._officialDayGrowthDate || '').toString();
