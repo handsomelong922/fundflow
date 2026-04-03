@@ -523,6 +523,9 @@
         .summary-row { cursor: pointer; transition: background 0.15s; }
         .summary-row:hover { background: var(--gray-50); }
 
+        body.summary-manual-editing #summaryScroll { overflow-x: hidden; }
+        body.summary-manual-editing #summaryScroll table { min-width: 0; width: 100%; }
+
         .summary-quote-container { margin-top: 12px; }
         .summary-quote-text { font-size: 0.875rem; font-weight: 700; color: var(--gray-800); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
         .summary-quote-from { margin-top: 8px; font-size: 0.8125rem; color: var(--gray-600); font-weight: 700; text-align: right; }
@@ -5310,10 +5313,7 @@
             const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
-            // 统一口径：当官方“今日净值”未披露但已在展示“今日估值/估值涨跌幅”时，当日盈亏必须跟随估值口径。
-            // 这里用 getDisplayDayGrowth 触发与 UI 一致的“口径选择”，避免午间休市/盘后落回上一交易日官方。
-            const dayGrowth0 = getDisplayDayGrowth(fund);
-            const usingEstNow0 = !hasTodayOfficial0 && hasTodayEst0 && (String(fund && fund._dayGrowthSource) === 'est' || (navDateStr !== todayStr));
+            const usingEstNow0 = !hasTodayOfficial0 && hasTodayEst0;
 
             // 盘前（09:15-09:30）：若今日估值未到且今日官方未披露 -> 清空当日盈亏；估值已到则继续按净值差计算。
             const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
@@ -5364,24 +5364,31 @@
             if ((isTrading0 || isMiddayBreak0) && hasTodayEst0 && Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
+                    const manualValue0 = getManualSummaryValue(fund);
+                    if (manualValue0 !== null && Number.isFinite(Number(manualValue0)) && Number(manualValue0) > 0) {
+                        const prevValue0 = Number(manualValue0);
+                        const dailyProfit0 = prevValue0 * ((estNav0 - lastNav) / lastNav);
+                        return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
+                    }
                     const prevValue0 = lastNav * sharesLast0;
                     const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
                     return { ok: true, dailyProfit: dailyProfit0, prevValue: prevValue0 };
                 }
             }
 
-            // 非交易时段：当日盈亏与“日涨跌幅”保持联动。
-            // 使用最新披露官方净值对应的持仓金额作为基数，完全依赖 dayGrowth 动态计算。
+            // 非交易时段：若仍有“今日估值”，继续用(今日估值-最新披露官方)*最新披露日份额（或手动持仓金额比例换算）。
+            // 说明：当日盈亏统一用“净值差”计算，不使用日涨跌幅%推算。
             if (Number.isFinite(lastNav) && lastNav > 0 && lastDate) {
                 const sharesLast0 = calcSharesAsOfDate(fund.code, fund, lastDate);
                 if (Number.isFinite(sharesLast0) && sharesLast0 > 0) {
-                    const baseValue0 = lastNav * sharesLast0;
+                    const manualValue0 = getManualSummaryValue(fund);
+                    const baseValue0 = (manualValue0 !== null && Number.isFinite(Number(manualValue0)) && Number(manualValue0) > 0)
+                        ? Number(manualValue0)
+                        : (lastNav * sharesLast0);
                     if (hasTodayEst0) {
-                        const dailyProfit0 = (estNav0 - lastNav) * sharesLast0;
-                        return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0 };
-                    }
-                    if (Number.isFinite(dayGrowth0)) {
-                        const dailyProfit0 = baseValue0 * (dayGrowth0 / 100);
+                        const dailyProfit0 = (manualValue0 !== null && Number.isFinite(Number(manualValue0)) && Number(manualValue0) > 0)
+                            ? (baseValue0 * ((estNav0 - lastNav) / lastNav))
+                            : ((estNav0 - lastNav) * sharesLast0);
                         return { ok: true, dailyProfit: dailyProfit0, prevValue: baseValue0 };
                     }
                 }
@@ -6095,6 +6102,13 @@
             const dailyProfitEl = document.getElementById('summaryDailyProfit');
             if (!tbody || !tagsEl || !totalValueEl || !totalProfitEl || !dailyProfitEl) return;
 
+            const activeEl0 = document.activeElement;
+            const activeEdit0 = (activeEl0 && activeEl0.classList && activeEl0.classList.contains('summary-edit-input')) ? activeEl0 : null;
+            const activeCode0 = activeEdit0 ? (activeEdit0.getAttribute('data-code') || '') : '';
+            const activeField0 = activeEdit0 ? (activeEdit0.getAttribute('data-field') || '') : '';
+            const activeSelStart0 = activeEdit0 && typeof activeEdit0.selectionStart === 'number' ? activeEdit0.selectionStart : null;
+            const activeSelEnd0 = activeEdit0 && typeof activeEdit0.selectionEnd === 'number' ? activeEdit0.selectionEnd : null;
+
             const calcHoldingDays = (fund) => {
                 const buys = getFundBuys(fund);
                 if (!Array.isArray(buys) || buys.length === 0) return NaN;
@@ -6359,6 +6373,16 @@
                     </tr>
                 `;
             }).join('');
+
+            if (_summaryManualEditMode && activeCode0 && activeField0) {
+                const sel = tbody.querySelector(`input.summary-edit-input[data-code="${CSS.escape(activeCode0)}"][data-field="${CSS.escape(activeField0)}"]`);
+                if (sel && typeof sel.focus === 'function') {
+                    sel.focus({ preventScroll: true });
+                    if (activeSelStart0 !== null && activeSelEnd0 !== null && typeof sel.setSelectionRange === 'function') {
+                        try { sel.setSelectionRange(activeSelStart0, activeSelEnd0); } catch (e) { }
+                    }
+                }
+            }
 
             tbody.querySelectorAll('tr.summary-row[data-code]').forEach(tr => {
                 tr.addEventListener('click', () => {
