@@ -2754,6 +2754,9 @@
             pingzhongdata_script: {
                 name: 'pingzhongdata_script', priority: 2,
                 fetch: async (code) => {
+                    try { window.Data_netWorthTrend = undefined; } catch {}
+                    try { window.fS_name = ''; } catch {}
+                    try { window.fSName = ''; } catch {}
                     await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
                     const name = (window.fS_name || window.fSName || '').toString();
                     const navData = window.Data_netWorthTrend;
@@ -2764,6 +2767,9 @@
                     const jzrq = new Date(latest?.x).toISOString().split('T')[0];
                     let gszzl = '0.00';
                     if (prev && prev.y) gszzl = (((latest.y - prev.y) / prev.y) * 100).toFixed(2);
+                    try { window.Data_netWorthTrend = undefined; } catch {}
+                    try { window.fS_name = ''; } catch {}
+                    try { window.fSName = ''; } catch {}
                     return { name, dwjz: String(dwjz), jzrq, gsz: String(dwjz), gszzl, gztime: jzrq + ' 15:00' };
                 }
             }
@@ -2871,7 +2877,63 @@
             startAutoUpdate(); 
 
             _lastVisibleTodayStr = getShanghaiTodayStr();
+            let _lastHiddenAtMs = Date.now();
+            let _lastActivatedDetailRefreshAtMs = 0;
+            let _lastActivatedLightRefreshAtMs = 0;
+
+            function getVisibleFundCodesInSidebar(maxCount = 10) {
+                const listEl = document.getElementById('fundList');
+                if (!listEl) return [];
+                const listRect = listEl.getBoundingClientRect();
+                if (!Number.isFinite(listRect.top) || !Number.isFinite(listRect.bottom)) return [];
+                const items = Array.from(listEl.querySelectorAll('.fund-item[data-code]'));
+                const out = [];
+                for (const it of items) {
+                    if (out.length >= maxCount) break;
+                    const code0 = (it.getAttribute('data-code') || '').trim();
+                    if (!code0) continue;
+                    const r = it.getBoundingClientRect();
+                    const visible = r.bottom >= listRect.top && r.top <= listRect.bottom;
+                    if (!visible) continue;
+                    out.push(code0);
+                }
+                return out;
+            }
+
+            function lightRefreshVisibleFundsInCurrentMode(mainEl, hiddenDurMs0, nowMs0) {
+                const inOverview0 = !!(mainEl && mainEl.classList.contains('overview-mode'));
+                const inSummary0 = !!(mainEl && mainEl.classList.contains('summary-mode'));
+                if (!inOverview0 && !inSummary0) return;
+                if (hiddenDurMs0 < 45000) return;
+                if ((nowMs0 - _lastActivatedLightRefreshAtMs) < 20000) return;
+
+                const codes0 = getVisibleFundCodesInSidebar(10);
+                if (!Array.isArray(codes0) || codes0.length === 0) return;
+
+                _lastActivatedLightRefreshAtMs = nowMs0;
+                refreshLock = refreshLock.then(async () => {
+                    for (const code of codes0) {
+                        const f0 = funds.find(x => x && x.code === code);
+                        if (!f0) continue;
+                        await refreshOneFundFull(f0, {
+                            suppressRender: true,
+                            includeHoldings: false,
+                            skipPositionHistory: true,
+                            refreshHistoryForDayGrowth: false,
+                            newestOptions: { timeoutDirectMs: 4500, timeoutProxyMs: 5500 }
+                        });
+                    }
+
+                    renderFundList();
+                    const main1 = document.querySelector('.main-content');
+                    if (main1 && main1.classList.contains('overview-mode')) renderFundOverview();
+                    if (main1 && main1.classList.contains('summary-mode')) renderSummaryView();
+                    if (selectedFund?.code) updateMainDisplay(selectedFund);
+                }).catch(err => console.warn('activated light refresh error:', err));
+            }
             function handleAppActivated() {
+                const nowMs0 = Date.now();
+                const hiddenDurMs0 = (Number.isFinite(_lastHiddenAtMs) && _lastHiddenAtMs > 0) ? (nowMs0 - _lastHiddenAtMs) : 0;
                 const todayStr0 = getShanghaiTodayStr();
                 const dayChanged0 = !!(_lastVisibleTodayStr && todayStr0 && _lastVisibleTodayStr !== todayStr0);
                 _lastVisibleTodayStr = todayStr0;
@@ -2893,9 +2955,29 @@
                 if (main0 && main0.classList.contains('overview-mode')) renderFundOverview();
                 if (main0 && main0.classList.contains('summary-mode')) renderSummaryView();
                 if (selectedFund?.code) updateMainDisplay(selectedFund);
+
+                const inOverview0 = !!(main0 && main0.classList.contains('overview-mode'));
+                const inSummary0 = !!(main0 && main0.classList.contains('summary-mode'));
+                const inDetail0 = !inOverview0 && !inSummary0;
+                const shouldForceRefreshDetail0 = inDetail0 && !!selectedFund?.code && hiddenDurMs0 >= 45000;
+                const throttled0 = (nowMs0 - _lastActivatedDetailRefreshAtMs) < 3000;
+                if (shouldForceRefreshDetail0 && !throttled0) {
+                    _lastActivatedDetailRefreshAtMs = nowMs0;
+                    const code0 = selectedFund.code;
+                    refreshLock = refreshLock.then(async () => {
+                        const f0 = funds.find(x => x && x.code === code0);
+                        if (!f0) return;
+                        await refreshOneFundFull(f0, { includeHoldings: true });
+                    }).catch(err => console.warn('activated detail refresh error:', err));
+                }
+
+                lightRefreshVisibleFundsInCurrentMode(main0, hiddenDurMs0, nowMs0);
             }
 
             document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    _lastHiddenAtMs = Date.now();
+                }
                 if (document.visibilityState === 'visible') {
                     handleAppActivated();
                 }
@@ -7585,28 +7667,20 @@
             if (historyCache[code]) {
                 if (renderChart) renderHistoryChart(code);
                 resetHistoryTable(code);
-                if (selectedFund && selectedFund.code === code) {
-                    updateMainDisplay(selectedFund);
-                }
                 return;
             }
-
             try {
+                try { window.Data_netWorthTrend = undefined; } catch {}
                 await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
                 const raw = window.Data_netWorthTrend;
                 if (!Array.isArray(raw) || raw.length === 0) throw new Error('Data_netWorthTrend 为空');
 
                 // 缓存全部数据（每条 {x: 时间戳, y: 净值}）
                 historyCache[code] = raw
-                    .map(item => ({ x: item.x, y: item.y }))
-                    .sort((a, b) => {
-                        const ax = Number(a?.x);
-                        const bx = Number(b?.x);
-                        if (!Number.isFinite(ax) && !Number.isFinite(bx)) return 0;
-                        if (!Number.isFinite(ax)) return 1;
-                        if (!Number.isFinite(bx)) return -1;
-                        return ax - bx;
-                    });
+                    .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+                    .map(p => ({ x: Number(p.x), y: Number(p.y) }));
+
+                try { window.Data_netWorthTrend = undefined; } catch {}
 
                 // 用最新一条同步净值
                 const fundRef = funds.find(f => f.code === code);
