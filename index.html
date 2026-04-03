@@ -5677,25 +5677,46 @@
             showToast(`已删除 ${removed?.name || removed?.code || code}`);
         }
 
-        function selectFund(fund) {
-            selectedFund = fund; 
-            updateFundListActiveOnly(fund?.code);
-            updateMainDisplay(fund); 
-            refreshLock = refreshLock.then(async () => {
-                try {
-                    await fetchFundData(fund, { suppressRender: true });
-                    try { await fetchBaiduNewestForFund(fund); } catch (e) { }
+        let _selectFundSeq = 0;
 
-                    try { await loadHoldingsAndSectors(fund, { silent: true }); } catch (e) { }
-                    try { await fetchHistoryData(fund.code, currentTimeRange !== 'realtime'); } catch (e) { }
+        function selectFund(fund) {
+            const code0 = (fund && fund.code) ? String(fund.code) : '';
+            const fund0 = code0 ? (funds.find(f => f && f.code === code0) || fund) : fund;
+            selectedFund = fund0;
+            const seq0 = ++_selectFundSeq;
+            updateFundListActiveOnly(selectedFund?.code);
+            if (selectedFund) updateMainDisplay(selectedFund);
+            (async () => {
+                try {
+                    const f1 = code0 ? (funds.find(x => x && x.code === code0) || fund0) : fund0;
+                    if (!f1 || !f1.code) return;
+
+                    await fetchFundData(f1, { suppressRender: true });
+                    updateFundListCardDisplay(f1);
+
+                    try {
+                        await fetchBaiduNewestForFund(f1);
+                        updateFundListCardDisplay(f1);
+                    } catch (e) { }
+
+                    try {
+                        await loadHoldingsAndSectors(f1, { silent: true });
+                    } catch (e) { }
+
+                    try {
+                        await fetchHistoryData(f1.code, currentTimeRange !== 'realtime');
+                    } catch (e) { }
 
                     saveFunds();
-                    renderFundList();
-                    updateMainDisplay(fund);
-                    if (currentTimeRange === 'realtime') updateRealtimeChart();
+                    updateFundListCardDisplay(f1);
+
+                    if (seq0 === _selectFundSeq && selectedFund?.code === code0) {
+                        updateMainDisplay(selectedFund);
+                        if (currentTimeRange === 'realtime') updateRealtimeChart();
+                    }
                 } catch (e) {
                 }
-            });
+            })();
             if (currentTimeRange === 'realtime') { updateRealtimeChart(); startRealtimeUpdate(); }
             if (window.innerWidth <= 768) { closeMobileSidebar(); }
             
