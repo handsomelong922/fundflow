@@ -4929,10 +4929,21 @@
             el.innerHTML = `<span>${s.isOpen?'▶':'⏸'}</span><span>${s.isOpen?'交易中':displayReason}</span>`;
         }
 
+        const CN_MARKET_HOLIDAYS = new Set([
+            '2026-04-06'
+        ]);
+
+        function isCnMarketHoliday(dateStr) {
+            if (!dateStr || typeof dateStr !== 'string') return false;
+            return CN_MARKET_HOLIDAYS.has(dateStr);
+        }
+
         function getMarketStatus() {
             const t = getShanghaiTimeParts();
+            const todayStr = `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
             const min = t.hour * 60 + t.minute;
             if (t.dow === 0 || t.dow === 6) return { isOpen: false, reason: '周末休市', canRealtimeUpdate: false };
+            if (isCnMarketHoliday(todayStr)) return { isOpen: false, reason: '节假日休市', canRealtimeUpdate: false };
             if ((min >= 570 && min < 690) || (min >= 780 && min < 900)) return { isOpen: true, reason: '交易中', canRealtimeUpdate: true };
             // 盘后补全期：15:00 后数据源可能仍在补最后几分钟（例如 14:55 才到），允许短时间继续拉取估值
             if (min >= 900 && min < 915) return { isOpen: false, reason: '盘后补全', canRealtimeUpdate: true };
