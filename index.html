@@ -5786,7 +5786,6 @@
             const switchedToNewDay0 = (_autoResetDate === todayStr0) && isAfter915();
             let overviewSummaryDayText0 = '今日';
             let latestDataDate0 = '';
-            let hasTodayData0 = false;
             for (const f0 of (Array.isArray(funds) ? funds : [])) {
                 if (!f0) continue;
                 const et0 = (f0.estimatedTime || '').toString();
@@ -5796,19 +5795,18 @@
                     const m0 = String(etm0[2]).padStart(2, '0');
                     const d0 = String(etm0[3]).padStart(2, '0');
                     const date0 = `${y0}-${m0}-${d0}`;
-                    if (date0 === todayStr0) hasTodayData0 = true;
+                    if (date0 && date0 > latestDataDate0) latestDataDate0 = date0;
                 }
                 const navDate0 = (f0.navDate || '').toString();
                 if (navDate0 && navDate0 > latestDataDate0) latestDataDate0 = navDate0;
-                if (navDate0 === todayStr0) hasTodayData0 = true;
                 const offDate0 = (f0._officialDayGrowthDate || '').toString();
                 if (offDate0 && offDate0 > latestDataDate0) latestDataDate0 = offDate0;
-                if (offDate0 === todayStr0) hasTodayData0 = true;
                 const bnDate0 = (f0._baiduNewestDayGrowthDate || '').toString();
                 if (bnDate0 && bnDate0 > latestDataDate0) latestDataDate0 = bnDate0;
-                if (bnDate0 === todayStr0) hasTodayData0 = true;
             }
-            if (isAfter915() && hasTodayData0) {
+            const st0 = getMarketStatus();
+            const isTradingDay0 = !!(st0 && st0.reason !== '周末休市' && st0.reason !== '节假日休市');
+            if (isTradingDay0 && isAfter915()) {
                 overviewSummaryDayText0 = '今日';
             } else if (latestDataDate0) {
                 overviewSummaryDayText0 = (latestDataDate0 === todayStr0 && isAfter915()) ? '今日' : latestDataDate0.slice(5);
