@@ -2895,12 +2895,7 @@
             initDayGrowthToggle(); 
             
             // 初始化时显示概览视图
-            if (funds.length > 0) {
-                showOverviewMode();
-            } else {
-                // 无基金时也显示概览（空状态）
-                showOverviewMode();
-            }
+            showOverviewMode();
             
             startAutoUpdate(); 
 
@@ -3714,13 +3709,11 @@
         }
 
         function getEffectiveRealtimeEndIndex(series) {
-            const lastKnown = findLastFiniteIndex(series);
-            return lastKnown;
+            return findLastFiniteIndex(series);
         }
 
         function getRealtimeSeriesForChart(fund) {
             const baseValue = parseFloat(fund.estimatedNav || fund.currentNav || 1.5);
-            const stable = (Number.isFinite(baseValue) && baseValue > 0) ? baseValue : 1.5;
             const raw = Array.isArray(fund.realtimeHistory) ? fund.realtimeHistory : [];
             const out = new Array(242);
             // 不要把“未来时间段”用 last 值硬填满，否则午休/盘前会看起来像画到了 15:00。
