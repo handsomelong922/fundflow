@@ -2585,6 +2585,34 @@
 
         // 全局快捷键监听
         document.addEventListener('keydown', (e) => {
+            if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                const activeElement = document.activeElement;
+                const isInputField = activeElement && (
+                    activeElement.tagName === 'INPUT' ||
+                    activeElement.tagName === 'TEXTAREA' ||
+                    activeElement.tagName === 'SELECT' ||
+                    activeElement.isContentEditable
+                );
+                if (isInputField) return;
+                const main0 = document.querySelector('.main-content');
+                const inOverview0 = !!(main0 && main0.classList.contains('overview-mode'));
+                const inSummary0 = !!(main0 && main0.classList.contains('summary-mode'));
+                if (inOverview0 || inSummary0) return;
+                if (!selectedFund?.code) return;
+                const ordered = getFundsForDisplay();
+                if (!Array.isArray(ordered) || ordered.length <= 1) return;
+                const curIdx = ordered.findIndex(f => f && f.code === selectedFund.code);
+                if (curIdx < 0) return;
+                const delta = (e.key === 'ArrowLeft') ? -1 : 1;
+                let nextIdx = curIdx + delta;
+                if (nextIdx < 0) nextIdx = ordered.length - 1;
+                if (nextIdx >= ordered.length) nextIdx = 0;
+                const nextFund = ordered[nextIdx];
+                if (!nextFund) return;
+                e.preventDefault();
+                selectFund(nextFund);
+                return;
+            }
             // Tab - 折叠/展开侧边栏
             if (e.key === 'Tab' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
                 // 检查是否在输入框中
@@ -3798,7 +3826,8 @@
             // 仅当本轮 fundgz_jsonp 确实“尝试过且失败”时，才启用 holdings_top10_est（严格满足：fundgz 不可用才切换）
             const fundgzTried0 = !!(fund && fund._fundgzTriedThisFetch);
             const fundgzFailed0 = !!(fund && fund._fundgzFailedThisFetch);
-            if (useHoldingsEst0 && lastSrc0 !== 'fundgz_jsonp' && fundgzTried0 && fundgzFailed0) {
+            const fundgzStale0 = !!(fund && fund._fundgzStaleThisFetch);
+            if (useHoldingsEst0 && fundgzTried0 && (fundgzFailed0 || fundgzStale0)) {
                 ensureSourceStat('holdings_top10_est');
                 sourceStats['holdings_top10_est'].success++;
                 fund._dayGrowthSource = 'est';
@@ -3967,6 +3996,7 @@
                 const failed0 = Array.isArray(data && data._failedSources) ? data._failedSources : [];
                 fund._fundgzTriedThisFetch = attempted0.includes('fundgz_jsonp');
                 fund._fundgzFailedThisFetch = failed0.includes('fundgz_jsonp');
+                fund._fundgzStaleThisFetch = false;
                 fund.name = data.name;
                 // fundgz 是“估值接口”，其 dwjz/jzrq 代表“上一交易日官方净值快照”，不能覆盖最新官方披露日期。
                 // 官方净值/日期以 historyCache(历史净值表) 或官方数据源为准。
@@ -3991,6 +4021,16 @@
                 const gzDateStrRaw = getDateStr(data.gztime);
                 const gzTimeHasClock0 = (data && typeof data.gztime === 'string') ? /\b\d{1,2}:\d{2}\b/.test(data.gztime) : false;
                 const gzDateStr = gzDateStrRaw || (gzTimeHasClock0 ? todayStr0 : '');
+                const status0 = getMarketStatus();
+                const isTradingDay0 = !!(status0 && status0.reason !== '周末休市' && status0.reason !== '节假日休市');
+                const isFundgzSource0 = srcName0 === 'fundgz_jsonp';
+                // fundgz_jsonp 跨日旧数据：交易日 09:15 后仍返回非今日 gztime，视为本轮估值不可用，避免把昨日估值当成今日。
+                const fundgzStaleThisFetch0 = isFundgzSource0 && isTradingDay0 && isAfter915() && gzDateStr && (gzDateStr !== todayStr0);
+                if (fundgzStaleThisFetch0) {
+                    fund._fundgzStaleThisFetch = true;
+                    fund._fundgzFailedThisFetch = true;
+                    fund._fundgzDayGrowth = null;
+                }
                 // 新交易日/跨天：重置 last idx，避免昨天的 idx=241 导致今天早盘 acceptGz 永远为 false
                 if (gzDateStr && gzDateStr !== (fund._lastGzDate || '')) {
                     fund._lastGzDate = gzDateStr;
@@ -4024,20 +4064,19 @@
                     }
                 }
                 
-                if (acceptGz && shouldAcceptEstimate) {
+                if (acceptGz && shouldAcceptEstimate && !fundgzStaleThisFetch0) {
                     fund._fundgzDayGrowth = data.gszzl;
                     fund.dayGrowth = data.gszzl;
                     fund.estimatedNav = data.gsz;
                     fund.estimatedTime = data.gztime;
                 }
-                const status = getMarketStatus();
                 const gszNum0 = parseFloat(data.gsz);
                 const dwjzNum0 = parseFloat(shouldUpdateOfficialNav0 ? data.dwjz : fund.currentNav);
-                const seed = status.canRealtimeUpdate
+                const seed = status0.canRealtimeUpdate
                     ? ((Number.isFinite(gszNum0) && gszNum0 > 0) ? gszNum0 : dwjzNum0)
                     : dwjzNum0;
                 if (!Array.isArray(fund.realtimeHistory)) fund.realtimeHistory = [];
-                const allowRealtimeWrite = (status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全');
+                const allowRealtimeWrite = (status0.canRealtimeUpdate || status0.reason === '午间休市' || status0.reason === '盘后补全');
                 if (allowRealtimeWrite && acceptGz && shouldAcceptEstimate) {
                     const v0 = parseFloat(data.gsz);
                     const v = (Number.isFinite(v0) && v0 > 0) ? v0 : seed;
