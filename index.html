@@ -2585,15 +2585,17 @@
 
         // 全局快捷键监听
         document.addEventListener('keydown', (e) => {
-            if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+            function isTypingInInput() {
                 const activeElement = document.activeElement;
-                const isInputField = activeElement && (
+                return !!(activeElement && (
                     activeElement.tagName === 'INPUT' ||
                     activeElement.tagName === 'TEXTAREA' ||
                     activeElement.tagName === 'SELECT' ||
                     activeElement.isContentEditable
-                );
-                if (isInputField) return;
+                ));
+            }
+            if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                if (isTypingInInput()) return;
                 const main0 = document.querySelector('.main-content');
                 const inOverview0 = !!(main0 && main0.classList.contains('overview-mode'));
                 const inSummary0 = !!(main0 && main0.classList.contains('summary-mode'));
@@ -2615,16 +2617,7 @@
             }
             // Tab - 折叠/展开侧边栏
             if (e.key === 'Tab' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-                // 检查是否在输入框中
-                const activeElement = document.activeElement;
-                const isInputField = activeElement && (
-                    activeElement.tagName === 'INPUT' || 
-                    activeElement.tagName === 'TEXTAREA' || 
-                    activeElement.tagName === 'SELECT' ||
-                    activeElement.isContentEditable
-                );
-                
-                if (!isInputField) {
+                if (!isTypingInInput()) {
                     e.preventDefault();
                     toggleSidebar();
                 }
@@ -2632,16 +2625,7 @@
             
             // Ctrl+A - 显示基金概览
             if (e.key === 'a' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-                // 检查是否在输入框中
-                const activeElement = document.activeElement;
-                const isInputField = activeElement && (
-                    activeElement.tagName === 'INPUT' || 
-                    activeElement.tagName === 'TEXTAREA' || 
-                    activeElement.tagName === 'SELECT' ||
-                    activeElement.isContentEditable
-                );
-                
-                if (!isInputField) {
+                if (!isTypingInInput()) {
                     e.preventDefault();
                     showOverviewMode();
                 }
@@ -3762,11 +3746,19 @@
         function getDisplayDayGrowth(fund) {
             const status = getMarketStatus();
             const sh = getShanghaiTimeParts();
+            const mins0 = sh.hour * 60 + sh.minute;
             const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const est = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
             const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(est);
+
+            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
+            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            const hasTodayOfficial0 = (navDateStr === todayStr);
+            if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst) {
+                return NaN;
+            }
 
             // 若已明确拿到“官方当日涨跌幅”，全局优先展示官方（避免卡片/详情与日涨跌幅卡片不一致）
             const newestDate = (fund && fund._baiduNewestDayGrowthDate) ? String(fund._baiduNewestDayGrowthDate) : '';
@@ -3900,11 +3892,19 @@
         function getDisplayNav(fund) {
             const status = getMarketStatus();
             const sh = getShanghaiTimeParts();
+            const mins0 = sh.hour * 60 + sh.minute;
             const todayStr = `${sh.year}-${String(sh.month).padStart(2,'0')}-${String(sh.day).padStart(2,'0')}`;
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const estNavNum = parseFloat(fund.estimatedNav);
             const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(estNavNum) && estNavNum > 0;
+
+            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
+            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            const hasTodayOfficial0 = (navDateStr === todayStr);
+            if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst) {
+                return '--';
+            }
 
             // 今日官方净值未出：优先展示“今日最后一次估算值”（盘后也要保留）
             if (navDateStr !== todayStr && hasTodayEst) {
@@ -4260,6 +4260,28 @@
                 fund.currentNav = displayNav;
             }
 
+            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免误导。
+            // 注意：详情页净值卡片这里不走 getDisplayNav，所以需要单独处理。
+            let preopenHideOfficial0 = false;
+            {
+                const status0 = getMarketStatus();
+                const sh0 = getShanghaiTimeParts();
+                const mins0 = sh0.hour * 60 + sh0.minute;
+                const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+                const navDateStr0 = getDateStr(displayNavDate);
+                const estDateStr0 = getDateStr(fund.estimatedTime);
+                const estNavNum0 = parseFloat(fund.estimatedNav);
+                const canShowEst0 = !!(status0 && (status0.reason === '盘前' || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
+                const hasTodayEst0 = (Number.isFinite(estNavNum0) && estNavNum0 > 0) && ((estDateStr0 === todayStr0) || (!estDateStr0 && canShowEst0));
+                const hasTodayOfficial0 = (navDateStr0 === todayStr0);
+                const isPreOpen0 = !!(status0 && status0.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+                if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst0) {
+                    displayNav = '';
+                    displayNavDate = '';
+                    preopenHideOfficial0 = true;
+                }
+            }
+
             document.getElementById('currentNav').textContent = displayNav || '--';
             document.getElementById('navDateLabel').textContent = displayNavDate ? displayNavDate.substring(5) : '--';
 
@@ -4268,6 +4290,10 @@
             const navDateStr0 = getDateStr(fund.navDate);
             const navChangeEl = document.getElementById('navChange');
             if (navChangeEl) {
+                if (preopenHideOfficial0) {
+                    navChangeEl.textContent = '等待今日净值更新';
+                    navChangeEl.className = 'stat-change';
+                } else
                 if (navDateStr0 === todayStr0) {
                     const raw = historyCache[fund.code];
                     // 若 historyCache 也已更新到“今日官方净值”，则昨日=倒数第2条；
