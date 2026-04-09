@@ -3753,10 +3753,10 @@
             const est = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
             const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(est);
 
-            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
-            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayOfficial0 = (navDateStr === todayStr);
-            if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst) {
+            // 交易日估值时段：如果“今日官方未出”且“今日估值也没拿到”，不要回退展示昨日官方涨跌幅，避免误导。
+            if (canShowEst0 && !hasTodayOfficial0 && !hasTodayEst) {
                 return NaN;
             }
 
@@ -3897,12 +3897,12 @@
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const estNavNum = parseFloat(fund.estimatedNav);
-            const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(estNavNum) && estNavNum > 0;
+            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const hasTodayEst = (Number.isFinite(estNavNum) && estNavNum > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
-            // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
-            const isPreOpen0 = !!(status && status.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
+            // 交易日估值时段：如果“今日官方未出”且“今日估值也没拿到”，不要回退展示昨日官方净值，避免误导。
             const hasTodayOfficial0 = (navDateStr === todayStr);
-            if (isPreOpen0 && !hasTodayOfficial0 && !hasTodayEst) {
+            if (canShowEst0 && !hasTodayOfficial0 && !hasTodayEst) {
                 return '--';
             }
 
@@ -4354,83 +4354,81 @@
                     const profitCard0 = document.querySelector('.stat-card:nth-child(4) .stat-label');
                     if (profitCard0) profitCard0.textContent = '当日盈亏';
                 }
-                return;
-            }
-            if (mu0 && mu0.ok) {
-                const m = mu0;
-                if (m.ok) {
-                    // 持仓收益
-                    {
-                        const profit0 = Number(m.profit) || 0;
-                        document.getElementById('totalProfit').textContent = '¥' + profit0.toFixed(2);
-                        document.getElementById('totalProfit').className = `stat-value ${profit0>=0?'positive':'negative'}`;
-                        const ppEl = document.getElementById('profitPercent');
-                        ppEl.textContent = '持仓金额 ¥' + (Number.isFinite(holdingValueUnified0) ? holdingValueUnified0.toFixed(2) : '--');
-                        ppEl.className = 'stat-change';
-                        ppEl.style.color = '';
+            } else {
+                if (mu0 && mu0.ok) {
+                    const m = mu0;
+                    if (m.ok) {
+                        // 持仓收益
+                        {
+                            const profit0 = Number(m.profit) || 0;
+                            document.getElementById('totalProfit').textContent = '¥' + profit0.toFixed(2);
+                            document.getElementById('totalProfit').className = `stat-value ${profit0>=0?'positive':'negative'}`;
+                            const ppEl = document.getElementById('profitPercent');
+                            ppEl.textContent = '持仓金额 ¥' + (Number.isFinite(holdingValueUnified0) ? holdingValueUnified0.toFixed(2) : '--');
+                            ppEl.className = 'stat-change';
+                            ppEl.style.color = '';
 
-                        const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                        if (profitCard) profitCard.textContent = '持仓收益';
+                            const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                            if (profitCard) profitCard.textContent = '持仓收益';
+                        }
+                    } else {
+                        document.getElementById('totalProfit').textContent = '--';
+                        document.getElementById('totalProfit').className = 'stat-value';
+                        const ppEl = document.getElementById('profitPercent');
+                        ppEl.textContent = '持仓金额 --';
+                        ppEl.className = 'stat-change';
+                        ppEl.style.color = '#000';
                     }
                 } else {
                     document.getElementById('totalProfit').textContent = '--';
                     document.getElementById('totalProfit').className = 'stat-value';
                     const ppEl = document.getElementById('profitPercent');
-                    ppEl.textContent = '持仓金额 --';
-                    ppEl.className = 'stat-change';
-                    ppEl.style.color = '#000';
-                }
-            } else {
-                document.getElementById('totalProfit').textContent = '--';
-                document.getElementById('totalProfit').className = 'stat-value';
-                const ppEl = document.getElementById('profitPercent');
-                const buys = getFundBuys(fund);
-                let pendingAmount = 0;
-                const hasHistory = Array.isArray(historyCache[fund.code]) && historyCache[fund.code].length > 0;
-                let pendingBuys0 = null;
-                if (hasHistory) {
-                    const pb = getPositionFromBuy(fund);
-                    if (pb && Array.isArray(pb.pendingBuys) && pb.pendingBuys.length > 0) {
-                        pendingBuys0 = pb.pendingBuys;
-                        for (const x of pb.pendingBuys) {
-                            const a = Number(x?.amount);
-                            if (Number.isFinite(a) && a > 0) pendingAmount += a;
+                    const buys = getFundBuys(fund);
+                    let pendingAmount = 0;
+                    const hasHistory = Array.isArray(historyCache[fund.code]) && historyCache[fund.code].length > 0;
+                    let pendingBuys0 = null;
+                    if (hasHistory) {
+                        const pb = getPositionFromBuy(fund);
+                        if (pb && Array.isArray(pb.pendingBuys) && pb.pendingBuys.length > 0) {
+                            pendingBuys0 = pb.pendingBuys;
+                            for (const x of pb.pendingBuys) {
+                                const a = Number(x?.amount);
+                                if (Number.isFinite(a) && a > 0) pendingAmount += a;
+                            }
                         }
                     }
-                }
-                if (pendingAmount > 0) {
-                    const sh0 = getShanghaiTimeParts();
-                    const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
-                    const navDateStr0 = getDateStr(fund.navDate);
-                    const shouldShowPrebuyTag0 = Array.isArray(pendingBuys0) && pendingBuys0.length > 0
-                        ? pendingBuys0.some(x => {
-                            const eff = (x && x.effectiveDate) ? String(x.effectiveDate) : '';
-                            if (!eff || !/^\d{4}-\d{2}-\d{2}$/.test(eff)) return true;
-                            if (!navDateStr0 || !/^\d{4}-\d{2}-\d{2}$/.test(navDateStr0)) return true;
-                            return navDateStr0 < eff;
-                        })
-                        : (navDateStr0 !== todayStr0);
-                    const tag = shouldShowPrebuyTag0 ? ' <span class="day-growth-source prebuy">预买入</span>' : '';
-                    ppEl.innerHTML = '持仓金额 ¥' + pendingAmount.toFixed(2) + tag;
-                    ppEl.style.color = '';
-                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
-                    if (!showDailyProfit) {
+                    if (pendingAmount > 0) {
+                        const sh0 = getShanghaiTimeParts();
+                        const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+                        const navDateStr0 = getDateStr(fund.navDate);
+                        const shouldShowPrebuyTag0 = Array.isArray(pendingBuys0) && pendingBuys0.length > 0
+                            ? pendingBuys0.some(x => {
+                                const eff = (x && x.effectiveDate) ? String(x.effectiveDate) : '';
+                                if (!eff || !/^\d{4}-\d{2}-\d{2}$/.test(eff)) return true;
+                                if (!navDateStr0 || !/^\d{4}-\d{2}-\d{2}$/.test(navDateStr0)) return true;
+                                return navDateStr0 < eff;
+                            })
+                            : (navDateStr0 !== todayStr0);
+                        const tag = shouldShowPrebuyTag0 ? ' <span class="day-growth-source prebuy">预买入</span>' : '';
+                        ppEl.innerHTML = '持仓金额 ¥' + pendingAmount.toFixed(2) + tag;
+                        ppEl.style.color = '';
+                        const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                        if (profitCard) profitCard.textContent = '持仓收益';
                         document.getElementById('totalProfit').textContent = '¥0.00';
                         document.getElementById('totalProfit').className = 'stat-value positive';
+                    } else if (buys.length > 0) {
+                        ppEl.textContent = hasHistory ? '等待净值更新' : '加载中...';
+                        ppEl.style.color = '#000';
+                        const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                        if (profitCard) profitCard.textContent = '持仓收益';
+                    } else {
+                        ppEl.textContent = '未设置持仓';
+                        ppEl.style.color = '#000';
+                        const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
+                        if (profitCard) profitCard.textContent = '持仓收益';
                     }
-                } else if (buys.length > 0) {
-                    ppEl.textContent = hasHistory ? '等待净值更新' : '加载中...';
-                    ppEl.style.color = '#000';
-                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
-                } else {
-                    ppEl.textContent = '未设置持仓';
-                    ppEl.style.color = '#000';
-                    const profitCard = document.querySelector('.stat-card:nth-child(4) .stat-label');
-                    if (profitCard) profitCard.textContent = showDailyProfit ? '当日盈亏' : '持仓收益';
+                    ppEl.className = 'stat-change';
                 }
-                ppEl.className = 'stat-change';
             }
 
             // 用上海时区判断周末
