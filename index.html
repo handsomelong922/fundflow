@@ -396,7 +396,7 @@
         .empty-subtext { font-size: 0.9375rem; }
         
         /* 数据源状态指示器 */
-        .source-indicator { position: fixed; bottom: 20px; left: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--gray-200); font-size: 0.8125rem; z-index: 100; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.45s ease, box-shadow 0.45s ease, padding 0.45s ease, border-radius 0.45s ease, gap 0.45s ease, width 0.45s ease, height 0.45s ease; }
+        .source-indicator { position: fixed; bottom: 20px; left: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--gray-200); font-size: 0.8125rem; z-index: 100; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.45s ease, box-shadow 0.45s ease, padding 0.45s ease, border-radius 0.45s ease, gap 0.45s ease; }
         .source-indicator:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
         .source-indicator .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
         .source-indicator .status-text { font-weight: 600; color: var(--gray-700); white-space: nowrap; overflow: hidden; max-width: 180px; opacity: 1; transition: max-width 0.45s ease, opacity 0.32s ease; }
@@ -406,10 +406,10 @@
         .source-indicator .status-dot.warn { background: #f59e0b; }
         .source-indicator .status-dot.down { background: #ef4444; }
 
-        .source-indicator.collapsed { width: 32px; height: 32px; padding: 0; border-radius: 50%; gap: 0; justify-content: center; box-sizing: border-box; }
+        .source-indicator.collapsed { padding: 10px; border-radius: 999px; gap: 0; }
         .source-indicator.collapsed .status-text,
         .source-indicator.collapsed .source-name { max-width: 0; opacity: 0; }
-        .source-indicator.collapsed .status-dot { width: 8px; height: 8px; }
+        .source-indicator.collapsed .status-dot { width: 10px; height: 10px; }
         
         /* 数据源统计弹窗 */
         .source-stats-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10001; display: none; align-items: center; justify-content: center; }
