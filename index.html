@@ -396,11 +396,20 @@
         .empty-subtext { font-size: 0.9375rem; }
         
         /* 数据源状态指示器 */
-        .source-indicator { position: fixed; bottom: 20px; left: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--gray-200); font-size: 0.8125rem; z-index: 100; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: all 0.3s; }
+        .source-indicator { position: fixed; bottom: 20px; left: 20px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid var(--gray-200); font-size: 0.8125rem; z-index: 100; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: transform 0.45s ease, box-shadow 0.45s ease, padding 0.45s ease, border-radius 0.45s ease, gap 0.45s ease, width 0.45s ease, height 0.45s ease; }
         .source-indicator:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
         .source-indicator .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
-        .source-indicator .status-text { font-weight: 600; color: var(--gray-700); }
-        .source-indicator .source-name { font-family: 'JetBrains Mono', monospace; color: var(--gray-500); font-size: 0.75rem; }
+        .source-indicator .status-text { font-weight: 600; color: var(--gray-700); white-space: nowrap; overflow: hidden; max-width: 180px; opacity: 1; transition: max-width 0.45s ease, opacity 0.32s ease; }
+        .source-indicator .source-name { font-family: 'JetBrains Mono', monospace; color: var(--gray-500); font-size: 0.75rem; white-space: nowrap; overflow: hidden; max-width: 180px; opacity: 1; transition: max-width 0.45s ease, opacity 0.32s ease; }
+
+        .source-indicator .status-dot.ok { background: #10b981; }
+        .source-indicator .status-dot.warn { background: #f59e0b; }
+        .source-indicator .status-dot.down { background: #ef4444; }
+
+        .source-indicator.collapsed { width: 32px; height: 32px; padding: 0; border-radius: 50%; gap: 0; justify-content: center; box-sizing: border-box; }
+        .source-indicator.collapsed .status-text,
+        .source-indicator.collapsed .source-name { max-width: 0; opacity: 0; }
+        .source-indicator.collapsed .status-dot { width: 8px; height: 8px; }
         
         /* 数据源统计弹窗 */
         .source-stats-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10001; display: none; align-items: center; justify-content: center; }
@@ -2865,7 +2874,41 @@
         }
         function closeSourceStats() { document.getElementById('sourceStatsModal').classList.remove('active'); }
         document.getElementById('sourceStatsModal')?.addEventListener('click', (e) => { if (e.target.id === 'sourceStatsModal') closeSourceStats(); });
-        function updateSourceIndicator(sourceName) { const indicator = document.getElementById('currentSourceName'); if (indicator) indicator.textContent = sourceName; }
+
+        function getSourceIndicatorHealth() {
+            const sources = Object.keys(DATA_SOURCES || {});
+            let totalAttempts = 0;
+            let totalSuccess = 0;
+            let totalFail = 0;
+            for (const name of sources) {
+                const s = sourceStats && sourceStats[name];
+                if (!s) continue;
+                const a = (Number(s.success) || 0) + (Number(s.fail) || 0);
+                totalAttempts += a;
+                totalSuccess += (Number(s.success) || 0);
+                totalFail += (Number(s.fail) || 0);
+            }
+            if (totalAttempts === 0) return { level: 'warn', text: '数据源检查中' };
+            if (totalSuccess === 0 && totalFail > 0) return { level: 'down', text: '数据源不可用' };
+            const rate = totalSuccess / (totalAttempts || 1);
+            if (rate < 0.5) return { level: 'warn', text: '数据源不稳定' };
+            return { level: 'ok', text: '数据源运行中' };
+        }
+
+        function updateSourceIndicator(sourceName) {
+            const indicator = document.getElementById('currentSourceName');
+            if (indicator) indicator.textContent = sourceName;
+
+            const root = document.getElementById('sourceIndicator');
+            const dot = root ? root.querySelector('.status-dot') : null;
+            const textEl = root ? root.querySelector('.status-text') : null;
+            const h = getSourceIndicatorHealth();
+            if (dot) {
+                dot.classList.remove('ok', 'warn', 'down');
+                dot.classList.add(h.level);
+            }
+            if (textEl) textEl.textContent = h.text;
+        }
 
         window.addEventListener('DOMContentLoaded', () => { 
             initChart(); 
@@ -2882,6 +2925,46 @@
             showOverviewMode();
             
             startAutoUpdate(); 
+
+            // 数据源指示器：打开后约 5 秒自动收缩；悬停/聚焦时展开
+            {
+                const el = document.getElementById('sourceIndicator');
+                if (el) {
+                    let autoCollapsed = false;
+                    let collapseTimer = null;
+
+                    const scheduleCollapse = () => {
+                        if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+                        collapseTimer = setTimeout(() => {
+                            if (document.hidden) return;
+                            el.classList.add('collapsed');
+                            autoCollapsed = true;
+                            collapseTimer = null;
+                        }, 5000);
+                    };
+
+                    const cancelScheduledCollapse = () => {
+                        if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+                    };
+
+                    // 首次打开：约 5 秒后自动收缩
+                    scheduleCollapse();
+
+                    const expand = () => {
+                        cancelScheduledCollapse();
+                        el.classList.remove('collapsed');
+                    };
+                    const collapse = () => {
+                        if (!autoCollapsed) return;
+                        scheduleCollapse();
+                    };
+
+                    el.addEventListener('mouseenter', expand);
+                    el.addEventListener('mouseleave', collapse);
+                    el.addEventListener('focusin', expand);
+                    el.addEventListener('focusout', collapse);
+                }
+            }
 
             _lastVisibleTodayStr = getShanghaiTodayStr();
             let _lastHiddenAtMs = Date.now();
