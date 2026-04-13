@@ -3834,12 +3834,15 @@
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const est = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
-            const hasTodayEst = (estDateStr === todayStr) && Number.isFinite(est);
-
             const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const hasTodayEst = Number.isFinite(est) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
             const hasTodayOfficial0 = (navDateStr === todayStr);
             // 交易日估值时段：如果“今日官方未出”且“今日估值也没拿到”，不要回退展示昨日官方涨跌幅，避免误导。
             if (canShowEst0 && !hasTodayOfficial0 && !hasTodayEst) {
+                if (fund) {
+                    fund._dayGrowthSource = '';
+                    fund._estDayGrowthSource = '';
+                }
                 return NaN;
             }
 
@@ -4992,6 +4995,11 @@
             } else {
                 el.innerHTML = '--';
                 el.className = 'stat-value';
+                if (chgEl) {
+                    chgEl.innerHTML = '--';
+                    chgEl.style.fontSize = '';
+                }
+                return;
             }
 
             if (chgEl) {
