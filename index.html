@@ -3149,7 +3149,7 @@
             const estDateStr = getDateStr(fund && fund.estimatedTime);
             const hasTodayOfficial0 = (navDateStr === todayStr);
 
-            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const canShowEst0 = !!(status && ((status.reason === '盘前' && isAfter915()) || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
             // 盘前（09:15-09:30）且尚未拿到“今日估值/今日官方”：不要展示上一交易日官方数据，避免被误认为“今日”。
@@ -3245,7 +3245,7 @@
                         <div class="fund-body ${isCollapsed ? 'collapsed' : ''}" id="body_${fund.code}">
                             <div class="fund-metrics">
                                 <div class="metric-card"><div class="metric-label">估算净值</div><div class="metric-value">${displayNav}</div></div>
-                                <div class="metric-card"><div class="metric-label">日涨跌幅</div><div class="metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</div></div>
+                                <div class="metric-card"><div class="metric-label">日涨跌幅</div><div class="metric-value ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'positive'}">${badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--'}</div></div>
                             </div>
                             <div class="fund-chart" id="miniChart_${fund.code}"></div>
                         </div>
@@ -3304,7 +3304,7 @@
                         
                         if (metricValues[0]) metricValues[0].textContent = displayNav;
                         if (metricValues[1]) {
-                            metricValues[1].className = `metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}`;
+                            metricValues[1].className = `metric-value ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'positive'}`;
                             metricValues[1].textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
                         }
                         
@@ -3342,7 +3342,7 @@
             const metricValues = item.querySelectorAll('.metric-value');
             if (metricValues[0]) metricValues[0].textContent = displayNav;
             if (metricValues[1]) {
-                metricValues[1].className = `metric-value ${badgeOk && badgeVal >= 0 ? 'positive' : 'negative'}`;
+                metricValues[1].className = `metric-value ${badgeOk ? (badgeVal >= 0 ? 'positive' : 'negative') : 'positive'}`;
                 metricValues[1].textContent = badgeOk ? (badgeVal >= 0 ? '+' : '') + badgeVal.toFixed(2) + '%' : '--';
             }
         }
@@ -3710,12 +3710,13 @@
             const miniChart = echarts.init(chartDom);
             miniCharts[fund.code] = miniChart;
             const { xData, yData } = getRealtimeChartData(fund);
-            const isUp = getDisplayDayGrowth(fund) >= 0;
+            const baseNav0 = parseFloat(fund && fund.currentNav);
+            const style0 = getRealtimeChartStyleByLastPoint(yData, baseNav0);
             miniChart.setOption({
                 grid: { left: 0, right: 0, top: 5, bottom: 5 },
                 xAxis: { type: 'category', data: xData, show: false, boundaryGap: false },
                 yAxis: { type: 'value', show: false, scale: true },
-                series: [{ type: 'line', data: yData, smooth: true, symbol: 'none', connectNulls: true, lineStyle: { width: 2, color: isUp ? '#ef4444' : '#10b981' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: isUp ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)' }, { offset: 1, color: 'rgba(255,255,255,0)' }]) } }]
+                series: [{ type: 'line', data: yData, smooth: true, symbol: 'none', connectNulls: true, lineStyle: { width: 2, color: style0.lineColor }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: style0.areaTop }, { offset: 1, color: 'rgba(255,255,255,0)' }]) } }]
             });
         }
 
@@ -3735,8 +3736,9 @@
             if (!chartDom) return;
             
             const status = getMarketStatus();
-            if (!status.canRealtimeUpdate && status.reason !== '午间休市') {
-                // 休市/不开盘：保持最后一帧，避免反复 setOption 导致闪跳
+            const allowMiniUpdate0 = !!(status && (status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全' || (status.reason === '盘前' && isAfter915())));
+            if (!allowMiniUpdate0) {
+                // 09:15 前盘前：保持最后一帧，避免反复 setOption 导致闪跳
                 return;
             }
             
@@ -3752,7 +3754,8 @@
             }
             
             const { xData, yData } = getRealtimeChartData(fund);
-            const isUp = getDisplayDayGrowth(fund) >= 0;
+            const baseNav0 = parseFloat(fund && fund.currentNav);
+            const style0 = getRealtimeChartStyleByLastPoint(yData, baseNav0);
             
             // 使用 notMerge: false 和 lazyUpdate 提升性能
             c.setOption({
@@ -3760,8 +3763,8 @@
                 series: [{
                     data: yData,
                     connectNulls: true,
-                    lineStyle: { width: 2, color: isUp ? '#ef4444' : '#10b981' },
-                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: isUp ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)' }, { offset: 1, color: 'rgba(255,255,255,0)' }]) }
+                    lineStyle: { width: 2, color: style0.lineColor },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: style0.areaTop }, { offset: 1, color: 'rgba(255,255,255,0)' }]) }
                 }]
             }, { notMerge: false, lazyUpdate: true, silent: true });
         }
@@ -3780,7 +3783,18 @@
         }
 
         function getRealtimeSeriesForChart(fund) {
-            const baseValue = parseFloat(fund.estimatedNav || fund.currentNav || 1.5);
+            const status0 = getMarketStatus();
+            const sh0 = getShanghaiTimeParts();
+            const todayStr0 = `${sh0.year}-${String(sh0.month).padStart(2,'0')}-${String(sh0.day).padStart(2,'0')}`;
+            const navDateStr0 = getDateStr(fund && fund.navDate);
+            const estDateStr0 = getDateStr(fund && fund.estimatedTime);
+            const estNavNum0 = parseFloat(fund && fund.estimatedNav);
+            const canShowEst0 = !!(status0 && ((status0.reason === '盘前' && isAfter915()) || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
+            const hasTodayOfficial0 = (navDateStr0 === todayStr0);
+            const hasTodayEst0 = (Number.isFinite(estNavNum0) && estNavNum0 > 0) && ((estDateStr0 === todayStr0) || (!estDateStr0 && canShowEst0));
+            if (canShowEst0 && !hasTodayOfficial0 && !hasTodayEst0) {
+                return new Array(242).fill(null);
+            }
             const raw = Array.isArray(fund.realtimeHistory) ? fund.realtimeHistory : [];
             const out = new Array(242);
             // 不要把“未来时间段”用 last 值硬填满，否则午休/盘前会看起来像画到了 15:00。
@@ -3834,7 +3848,7 @@
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const est = parseFloat((fund._fundgzDayGrowth !== undefined && fund._fundgzDayGrowth !== null) ? fund._fundgzDayGrowth : fund.dayGrowth);
-            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const canShowEst0 = !!(status && ((status.reason === '盘前' && isAfter915()) || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst = Number.isFinite(est) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
             const hasTodayOfficial0 = (navDateStr === todayStr);
             // 交易日估值时段：如果“今日官方未出”且“今日估值也没拿到”，不要回退展示昨日官方涨跌幅，避免误导。
@@ -3983,7 +3997,7 @@
             const navDateStr = getDateStr(fund.navDate);
             const estDateStr = getDateStr(fund.estimatedTime);
             const estNavNum = parseFloat(fund.estimatedNav);
-            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const canShowEst0 = !!(status && ((status.reason === '盘前' && isAfter915()) || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst = (Number.isFinite(estNavNum) && estNavNum > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
             // 交易日估值时段：如果“今日官方未出”且“今日估值也没拿到”，不要回退展示昨日官方净值，避免误导。
@@ -4184,11 +4198,9 @@
                 }
                 // 同步迷你图与主图（同一份 realtimeHistory）
                 // 休市/不开盘时不刷新迷你图，避免闪跳；但允许首次初始化
-                if (allowRealtimeWrite && acceptGz) {
-                    updateMiniChart(fund);
-                } else {
-                    if (!miniCharts[fund.code]) initMiniChart(fund);
-                }
+                const allowMiniUpdate0 = !!(status0 && (status0.canRealtimeUpdate || status0.reason === '午间休市' || status0.reason === '盘后补全' || (status0.reason === '盘前' && isAfter915())));
+                if (allowMiniUpdate0) updateMiniChart(fund);
+                else if (!miniCharts[fund.code]) initMiniChart(fund);
                 if (selectedFund?.code === fund.code) { updateMainDisplay(fund); if (currentTimeRange === 'realtime') updateRealtimeChart(); }
             } catch (e) { console.error('获取基金数据失败:', e); showToast('数据获取失败，请稍后重试', 'error'); }
         }
@@ -4357,7 +4369,7 @@
                 const navDateStr0 = getDateStr(displayNavDate);
                 const estDateStr0 = getDateStr(fund.estimatedTime);
                 const estNavNum0 = parseFloat(fund.estimatedNav);
-                const canShowEst0 = !!(status0 && (status0.reason === '盘前' || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
+                const canShowEst0 = !!(status0 && ((status0.reason === '盘前' && isAfter915()) || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
                 const hasTodayEst0 = (Number.isFinite(estNavNum0) && estNavNum0 > 0) && ((estDateStr0 === todayStr0) || (!estDateStr0 && canShowEst0));
                 const hasTodayOfficial0 = (navDateStr0 === todayStr0);
                 const isPreOpen0 = !!(status0 && status0.reason === '盘前') && mins0 >= (9 * 60 + 15) && mins0 < (9 * 60 + 30);
@@ -4541,7 +4553,7 @@
                     const estDateStr = getDateStr(fund.estimatedTime);
                     const estNavNum = parseFloat(fund.estimatedNav);
                     const status0 = getMarketStatus();
-                    const canShowEst0 = !!(status0 && (status0.reason === '盘前' || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
+                    const canShowEst0 = !!(status0 && ((status0.reason === '盘前' && isAfter915()) || status0.isOpen || status0.reason === '午间休市' || status0.reason === '盘后补全'));
                     const hasTodayEst = (Number.isFinite(estNavNum) && estNavNum > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
                     if (hasTodayEst) {
@@ -5550,7 +5562,7 @@
             // 今日估值：
             // - 若带日期且为今日：直接视为今日估值
             // - 若不带日期/日期解析失败：在盘前/交易中/午休/盘后补全等“可能出现估值更新”的时段，只要 estimatedNav 有效就视为今日估值
-            const canShowEst0 = !!(status && (status.reason === '盘前' || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
+            const canShowEst0 = !!(status && ((status.reason === '盘前' && isAfter915()) || status.isOpen || status.reason === '午间休市' || status.reason === '盘后补全'));
             const hasTodayEst0 = (Number.isFinite(estNav0) && estNav0 > 0) && ((estDateStr === todayStr) || (!estDateStr && canShowEst0));
 
             const usingEstNow0 = !hasTodayOfficial0 && hasTodayEst0;
@@ -7423,6 +7435,7 @@
             setTurningPointMagnetData(xData, yData, 16);
 
             const baseNav = parseFloat(selectedFund.currentNav);
+            const style0 = getRealtimeChartStyleByLastPoint(yData, baseNav);
             chart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -7458,8 +7471,26 @@
                         }
                     }
                 },
-                series: [{ name: '净值', data: yData }]
+                series: [{
+                    name: '净值',
+                    type: 'line',
+                    smooth: true,
+                    symbol: 'none',
+                    connectNulls: true,
+                    data: yData,
+                    lineStyle: { width: 3, color: style0.lineColor },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: style0.areaTop }, { offset: 1, color: 'rgba(255,255,255,0)' }]) }
+                }]
             });
+        }
+
+        function getRealtimeChartStyleByLastPoint(yData, baseNav) {
+            const idx0 = findLastFiniteIndex(yData);
+            const lastNav = (idx0 >= 0 && Array.isArray(yData)) ? Number(yData[idx0]) : NaN;
+            const isUp0 = Number.isFinite(baseNav) && baseNav > 0 && Number.isFinite(lastNav) ? (lastNav >= baseNav) : null;
+            const lineColor0 = (isUp0 === null) ? '#3b82f6' : (isUp0 ? '#ef4444' : '#10b981');
+            const areaTop0 = (isUp0 === null) ? 'rgba(59,130,246,0.22)' : (isUp0 ? 'rgba(239,68,68,0.16)' : 'rgba(16,185,129,0.14)');
+            return { lineColor: lineColor0, areaTop: areaTop0 };
         }
 
         // 根据时间范围计算截断时间戳（毫秒）
