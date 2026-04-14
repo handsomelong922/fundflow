@@ -2930,39 +2930,46 @@
             {
                 const el = document.getElementById('sourceIndicator');
                 if (el) {
-                    let autoCollapsed = false;
                     let collapseTimer = null;
-
-                    const scheduleCollapse = () => {
-                        if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
-                        collapseTimer = setTimeout(() => {
-                            if (document.hidden) return;
-                            el.classList.add('collapsed');
-                            autoCollapsed = true;
-                            collapseTimer = null;
-                        }, 5000);
-                    };
+                    let isInteracting = false;
 
                     const cancelScheduledCollapse = () => {
                         if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
+                    };
+
+                    const scheduleCollapse = () => {
+                        cancelScheduledCollapse();
+                        collapseTimer = setTimeout(() => {
+                            collapseTimer = null;
+                            if (document.hidden) return;
+                            if (isInteracting) return;
+                            el.classList.add('collapsed');
+                        }, 5000);
                     };
 
                     // 首次打开：约 5 秒后自动收缩
                     scheduleCollapse();
 
                     const expand = () => {
+                        isInteracting = true;
                         cancelScheduledCollapse();
                         el.classList.remove('collapsed');
                     };
-                    const collapse = () => {
-                        if (!autoCollapsed) return;
+
+                    const collapseLater = () => {
+                        isInteracting = false;
                         scheduleCollapse();
                     };
 
                     el.addEventListener('mouseenter', expand);
-                    el.addEventListener('mouseleave', collapse);
+                    el.addEventListener('mouseleave', collapseLater);
                     el.addEventListener('focusin', expand);
-                    el.addEventListener('focusout', collapse);
+                    el.addEventListener('focusout', collapseLater);
+
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.hidden) return;
+                        if (!isInteracting) scheduleCollapse();
+                    });
                 }
             }
 
@@ -3720,6 +3727,10 @@
             });
         }
 
+        function isMiniChartUpdateAllowed(status) {
+            return !!(status && (status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全' || (status.reason === '盘前' && isAfter915())));
+        }
+
         // 图表更新节流器
         const chartUpdateThrottles = new Map();
         
@@ -3736,8 +3747,7 @@
             if (!chartDom) return;
             
             const status = getMarketStatus();
-            const allowMiniUpdate0 = !!(status && (status.canRealtimeUpdate || status.reason === '午间休市' || status.reason === '盘后补全' || (status.reason === '盘前' && isAfter915())));
-            if (!allowMiniUpdate0) {
+            if (!isMiniChartUpdateAllowed(status)) {
                 // 09:15 前盘前：保持最后一帧，避免反复 setOption 导致闪跳
                 return;
             }
@@ -4198,8 +4208,7 @@
                 }
                 // 同步迷你图与主图（同一份 realtimeHistory）
                 // 休市/不开盘时不刷新迷你图，避免闪跳；但允许首次初始化
-                const allowMiniUpdate0 = !!(status0 && (status0.canRealtimeUpdate || status0.reason === '午间休市' || status0.reason === '盘后补全' || (status0.reason === '盘前' && isAfter915())));
-                if (allowMiniUpdate0) updateMiniChart(fund);
+                if (isMiniChartUpdateAllowed(status0)) updateMiniChart(fund);
                 else if (!miniCharts[fund.code]) initMiniChart(fund);
                 if (selectedFund?.code === fund.code) { updateMainDisplay(fund); if (currentTimeRange === 'realtime') updateRealtimeChart(); }
             } catch (e) { console.error('获取基金数据失败:', e); showToast('数据获取失败，请稍后重试', 'error'); }
@@ -7435,7 +7444,8 @@
             setTurningPointMagnetData(xData, yData, 16);
 
             const baseNav = parseFloat(selectedFund.currentNav);
-            const style0 = getRealtimeChartStyleByLastPoint(yData, baseNav);
+            const lineColor0 = '#3b82f6';
+            const areaTop0 = 'rgba(59,130,246,0.22)';
             chart.setOption({
                 tooltip: {
                     trigger: 'axis',
@@ -7478,8 +7488,8 @@
                     symbol: 'none',
                     connectNulls: true,
                     data: yData,
-                    lineStyle: { width: 3, color: style0.lineColor },
-                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: style0.areaTop }, { offset: 1, color: 'rgba(255,255,255,0)' }]) }
+                    lineStyle: { width: 3, color: lineColor0 },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: areaTop0 }, { offset: 1, color: 'rgba(255,255,255,0)' }]) }
                 }]
             });
         }
