@@ -1050,7 +1050,7 @@
         let currentTimeRange = 'realtime';
         let historyCache = {}; // { [fundCode]: [{x, y}, ...] } 缓存 pingzhongdata 全部历史
         let historyTableState = { code: null, rendered: 0, pageSize: 10 };
-        let fundgzQueue = Promise.resolve();
+        let jsonpGlobalLock = Promise.resolve();
         let marketIndices = {};
         let selectedIndexKey = null;
         let indexCharts = {};
@@ -2761,37 +2761,41 @@
             fundgz_jsonp: {
                 name: 'fundgz_jsonp', priority: 1,
                 fetch: async (code) => {
-                    return await new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        const prev = window.jsonpgz;
-                        const timeout = setTimeout(() => { window.jsonpgz = prev; script.remove(); reject(new Error('timeout')); }, 8000);
-                        window.jsonpgz = (data) => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); resolve(data); };
-                        script.onerror = () => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); reject(new Error('script load failed')); };
-                        script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-                        document.head.appendChild(script);
-                    });
+                    return await (jsonpGlobalLock = jsonpGlobalLock.then(() => {
+                        return new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            const prev = window.jsonpgz;
+                            const timeout = setTimeout(() => { window.jsonpgz = prev; script.remove(); reject(new Error('timeout')); }, 8000);
+                            window.jsonpgz = (data) => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); resolve(data); };
+                            script.onerror = () => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); reject(new Error('script load failed')); };
+                            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+                            document.head.appendChild(script);
+                        });
+                    }));
                 }
             },
             pingzhongdata_script: {
                 name: 'pingzhongdata_script', priority: 2,
                 fetch: async (code) => {
-                    try { window.Data_netWorthTrend = undefined; } catch {}
-                    try { window.fS_name = ''; } catch {}
-                    try { window.fSName = ''; } catch {}
-                    await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
-                    const name = (window.fS_name || window.fSName || '').toString();
-                    const navData = window.Data_netWorthTrend;
-                    if (!name || !Array.isArray(navData) || navData.length === 0) throw new Error('Parse failed');
-                    const latest = navData[navData.length - 1];
-                    const prev = navData.length >= 2 ? navData[navData.length - 2] : null;
-                    const dwjz = latest?.y;
-                    const jzrq = new Date(latest?.x).toISOString().split('T')[0];
-                    let gszzl = '0.00';
-                    if (prev && prev.y) gszzl = (((latest.y - prev.y) / prev.y) * 100).toFixed(2);
-                    try { window.Data_netWorthTrend = undefined; } catch {}
-                    try { window.fS_name = ''; } catch {}
-                    try { window.fSName = ''; } catch {}
-                    return { name, dwjz: String(dwjz), jzrq, gsz: String(dwjz), gszzl, gztime: jzrq + ' 15:00' };
+                    return await (jsonpGlobalLock = jsonpGlobalLock.then(async () => {
+                        try { window.Data_netWorthTrend = undefined; } catch {}
+                        try { window.fS_name = ''; } catch {}
+                        try { window.fSName = ''; } catch {}
+                        await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`, 12000);
+                        const name = (window.fS_name || window.fSName || '').toString();
+                        const navData = window.Data_netWorthTrend;
+                        if (!name || !Array.isArray(navData) || navData.length === 0) throw new Error('Parse failed');
+                        const latest = navData[navData.length - 1];
+                        const prev = navData.length >= 2 ? navData[navData.length - 2] : null;
+                        const dwjz = latest?.y;
+                        const jzrq = new Date(latest?.x).toISOString().split('T')[0];
+                        let gszzl = '0.00';
+                        if (prev && prev.y) gszzl = (((latest.y - prev.y) / prev.y) * 100).toFixed(2);
+                        try { window.Data_netWorthTrend = undefined; } catch {}
+                        try { window.fS_name = ''; } catch {}
+                        try { window.fSName = ''; } catch {}
+                        return { name, dwjz: String(dwjz), jzrq, gsz: String(dwjz), gszzl, gztime: jzrq + ' 15:00' };
+                    }));
                 }
             }
         };
@@ -4093,7 +4097,7 @@
 
         async function fetchFundData(fund, options = {}) {
             try {
-                const data = await (fundgzQueue = fundgzQueue.then(() => fetchWithFallback(fund.code)));
+                const data = await fetchWithFallback(fund.code);
                 fund._lastFetchSource = (data && data._sourceName) ? String(data._sourceName) : '';
                 const attempted0 = Array.isArray(data && data._attemptedSources) ? data._attemptedSources : [];
                 const failed0 = Array.isArray(data && data._failedSources) ? data._failedSources : [];
