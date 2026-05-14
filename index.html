@@ -2699,10 +2699,14 @@
                 script.referrerPolicy = 'no-referrer';
                 const sep = url.includes('?') ? '&' : '?';
                 const timer = setTimeout(() => {
-                    cleanup();
+                    cleanupAll();
                     reject(new Error('timeout'));
                 }, timeoutMs);
-                const cleanup = () => {
+                const cleanupScriptOnly = () => {
+                    clearTimeout(timer);
+                    script.remove();
+                };
+                const cleanupAll = () => {
                     clearTimeout(timer);
                     // 避免竞态：超时/失败后脚本可能“晚到”，仍会执行 cbName(...)。
                     // 若这里直接 delete，会导致控制台报 `cbName is not defined`。
@@ -2714,16 +2718,60 @@
                     script.remove();
                 };
                 window[cbName] = (data) => {
-                    cleanup();
+                    cleanupAll();
                     resolve(data);
                 };
-                script.onerror = () => {
-                    cleanup();
-                    reject(new Error('script load failed'));
+                script.onerror = async () => {
+                    cleanupScriptOnly();
+                    try {
+                        const text = await fetchScriptTextViaProxy(url);
+                        injectInlineScriptText(text);
+                        return;
+                    } catch {
+                        cleanupAll();
+                        reject(new Error('script load failed'));
+                    }
                 };
                 script.src = `${url}${sep}${callbackParam}=${cbName}`;
                 document.head.appendChild(script);
             });
+        }
+
+        function getScriptProxyPrefixes() {
+            return [
+                'https://r.jina.ai/http://',
+                'https://r.jina.ai/http://r.jina.ai/http://'
+            ];
+        }
+
+        async function fetchScriptTextViaProxy(url) {
+            const isFile = (location && location.protocol === 'file:');
+            const canProxy = isFile && /^https:\/\//i.test(url);
+            if (!canProxy) throw new Error('proxy not allowed');
+
+            const proxyPrefixes = getScriptProxyPrefixes();
+            let text = '';
+            let lastErr;
+            for (const p of proxyPrefixes) {
+                try {
+                    const proxyUrl = `${p}${url}`;
+                    const res = await fetch(proxyUrl, { cache: 'no-store' });
+                    if (!res.ok) throw new Error(`proxy http ${res.status}`);
+                    text = await res.text();
+                    if (text) return text;
+                } catch (e) {
+                    lastErr = e;
+                }
+            }
+            throw (lastErr || new Error('proxy empty'));
+        }
+
+        function injectInlineScriptText(text) {
+            const inline = document.createElement('script');
+            inline.type = 'text/javascript';
+            inline.text = text;
+            document.head.appendChild(inline);
+            inline.remove();
         }
 
         function loadScript(url, timeoutMs = 12000) {
@@ -2748,18 +2796,8 @@
                 script.onerror = async () => {
                     cleanup();
                     try {
-                        const isFile = (location && location.protocol === 'file:');
-                        const canProxy = isFile && /^https:\/\//i.test(url);
-                        if (!canProxy) throw new Error('script load failed');
-                        const proxyUrl = `https://r.jina.ai/${url}`;
-                        const res = await fetch(proxyUrl, { cache: 'no-store' });
-                        if (!res.ok) throw new Error(`proxy http ${res.status}`);
-                        const text = await res.text();
-                        const inline = document.createElement('script');
-                        inline.type = 'text/javascript';
-                        inline.text = text;
-                        document.head.appendChild(inline);
-                        inline.remove();
+                        const text = await fetchScriptTextViaProxy(url);
+                        injectInlineScriptText(text);
                         resolve();
                     } catch {
                         reject(new Error('script load failed'));
@@ -2781,21 +2819,45 @@
             });
         }
 
+        const _fundgzCircuit = { failStreak: 0, openUntilMs: 0 };
+        function fundgzCanAttempt() { return Date.now() >= (_fundgzCircuit.openUntilMs || 0); }
+        function fundgzOnSuccess() { _fundgzCircuit.failStreak = 0; _fundgzCircuit.openUntilMs = 0; }
+        function fundgzOnFail() {
+            _fundgzCircuit.failStreak = (_fundgzCircuit.failStreak || 0) + 1;
+            if (_fundgzCircuit.failStreak >= 3) {
+                _fundgzCircuit.openUntilMs = Date.now() + 60000;
+            }
+        }
+
         const DATA_SOURCES = {
             fundgz_jsonp: {
                 name: 'fundgz_jsonp', priority: 1,
                 fetch: async (code) => {
                     return await (jsonpGlobalLock = jsonpGlobalLock.then(() => {
                         return new Promise((resolve, reject) => {
+                            if (!fundgzCanAttempt()) return reject(new Error('circuit open'));
                             const script = document.createElement('script');
                             script.charset = 'UTF-8';
                             script.async = true;
                             script.type = 'text/javascript';
                             script.referrerPolicy = 'no-referrer';
                             const prev = window.jsonpgz;
-                            const timeout = setTimeout(() => { window.jsonpgz = prev; script.remove(); reject(new Error('timeout')); }, 8000);
-                            window.jsonpgz = (data) => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); resolve(data); };
-                            script.onerror = () => { clearTimeout(timeout); window.jsonpgz = prev; script.remove(); reject(new Error('script load failed')); };
+                            const timeout = setTimeout(() => { fundgzOnFail(); window.jsonpgz = prev; script.remove(); reject(new Error('timeout')); }, 8000);
+                            window.jsonpgz = (data) => { fundgzOnSuccess(); clearTimeout(timeout); window.jsonpgz = prev; script.remove(); resolve(data); };
+                            script.onerror = async () => {
+                                clearTimeout(timeout);
+                                script.remove();
+                                try {
+                                    const url = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+                                    const text = await fetchScriptTextViaProxy(url);
+                                    injectInlineScriptText(text);
+                                    return;
+                                } catch {
+                                    fundgzOnFail();
+                                    window.jsonpgz = prev;
+                                    reject(new Error('script load failed'));
+                                }
+                            };
                             script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
                             document.head.appendChild(script);
                         });
@@ -2875,7 +2937,12 @@
                     if (source !== sources[sources.length - 1]) { await new Promise(resolve => setTimeout(resolve, 200)); continue; }
                 }
             }
-            throw lastError || new Error('所有数据源均失败');
+            const e = lastError || new Error('所有数据源均失败');
+            try {
+                e._attemptedSources = attemptedSources.slice();
+                e._failedSources = failedSources.slice();
+            } catch {}
+            throw e;
         }
         
         document.getElementById('sourceIndicator')?.addEventListener('click', () => { openSourceStatsModal(); });
@@ -3417,7 +3484,7 @@
             const refreshHistoryForDayGrowth = (options.refreshHistoryForDayGrowth !== false);
             const newestOptions = (options.newestOptions && typeof options.newestOptions === 'object') ? options.newestOptions : undefined;
 
-            await fetchFundData(fund, { suppressRender: true });
+            const ok = await fetchFundData(fund, { suppressRender: true });
             try { await fetchBaiduNewestForFund(fund, newestOptions || {}); } catch (e) { }
             if (!skipPositionHistory) {
                 await ensureHistoryForPositionIfNeeded(fund);
@@ -3450,6 +3517,7 @@
             }
 
             if (suppressRender) updateFundListCardDisplay(fund);
+            return !!ok;
         }
 
         // 只初始化可见区域的图表（懒加载）
@@ -4244,7 +4312,18 @@
                 if (isMiniChartUpdateAllowed(status0)) updateMiniChart(fund);
                 else if (!miniCharts[fund.code]) initMiniChart(fund);
                 if (selectedFund?.code === fund.code) { updateMainDisplay(fund); if (currentTimeRange === 'realtime') updateRealtimeChart(); }
-            } catch (e) { console.error('获取基金数据失败:', e); showToast('数据获取失败，请稍后重试', 'error'); }
+                return true;
+            } catch (e) {
+                try {
+                    const attempted0 = Array.isArray(e && e._attemptedSources) ? e._attemptedSources : [];
+                    const failed0 = Array.isArray(e && e._failedSources) ? e._failedSources : [];
+                    fund._fundgzTriedThisFetch = attempted0.includes('fundgz_jsonp');
+                    fund._fundgzFailedThisFetch = failed0.includes('fundgz_jsonp');
+                } catch {}
+                console.error('获取基金数据失败:', e);
+                showToast('数据获取失败，请稍后重试', 'error');
+                return false;
+            }
         }
 
 
@@ -5321,30 +5400,9 @@
         }
 
         function buildGushitongSources(targetUrl, options = {}) {
-            const proxyOff = (localStorage.getItem('BAIDU_PROXY_OFF') || '') === '1';
-            const corsProxy = ((localStorage.getItem('BAIDU_CORS_PROXY') || '').trim() || 'https://api.allorigins.win/get?url=');
             const allowDirect = (localStorage.getItem('BAIDU_DIRECT') || '') === '1';
             const timeoutJsonp = Number.isFinite(options.timeoutJsonpMs) ? Number(options.timeoutJsonpMs) : 2500;
-            const timeoutProxy = Number.isFinite(options.timeoutProxyMs) ? Number(options.timeoutProxyMs) : 10000;
             const timeoutDirect = Number.isFinite(options.timeoutDirectMs) ? Number(options.timeoutDirectMs) : 9000;
-
-            async function fetchViaProxy(url, proxyPrefix) {
-                const proxyUrl = `${proxyPrefix}${encodeURIComponent(url)}`;
-                const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeoutProxy) });
-                if (!res.ok) throw new Error(`proxy http ${res.status}`);
-                let payload;
-                try {
-                    payload = await res.json();
-                } catch {
-                    const text = await res.text();
-                    payload = JSON.parse(text);
-                }
-                const raw = payload && typeof payload === 'object' && typeof payload.contents === 'string'
-                    ? payload.contents
-                    : payload;
-                if (typeof raw === 'string') return JSON.parse(raw);
-                return raw;
-            }
 
             const sources = [];
             sources.push({
@@ -5357,12 +5415,6 @@
                     }
                 }
             });
-            if (!proxyOff && corsProxy) {
-                sources.push({
-                    name: 'gushitong_proxy',
-                    fetch: async () => await fetchViaProxy(targetUrl, corsProxy)
-                });
-            }
             if (allowDirect) {
                 sources.push({
                     name: 'gushitong_direct',
@@ -6782,43 +6834,80 @@
                 const shNow0 = skipHistory ? null : getShanghaiTimeParts();
                 const todayStr0 = skipHistory ? '' : `${shNow0.year}-${String(shNow0.month).padStart(2,'0')}-${String(shNow0.day).padStart(2,'0')}`;
 
-                const concurrency = Math.max(1, Number(options.concurrency) || 10);
+                let concurrency = Math.max(1, Number(options.concurrency) || 5);
+                let batchSize = Math.max(1, Number(options.batchSize) || 10);
+                let batchDelayMs = Math.max(0, Number(options.batchDelayMs) || 350);
                 const list = Array.isArray(funds) ? funds.slice() : [];
-                let cursor = 0;
 
-                const worker = async () => {
-                    while (cursor < list.length) {
-                        const idx = cursor++;
-                        const fund = list[idx];
-                        if (!fund) continue;
+                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                        await refreshOneFundFull(fund, {
-                            suppressRender: true,
-                            includeHoldings: false,
-                            newestOptions: { timeoutDirectMs: 8000, timeoutProxyMs: 9000 },
-                            refreshHistoryForDayGrowth: !skipHistory,
-                            skipPositionHistory: skipHistory
-                        });
+                const processOne = async (fund) => {
+                    if (!fund) return false;
 
-                        if (skipHistory) continue;
+                    const ok = await refreshOneFundFull(fund, {
+                        suppressRender: true,
+                        includeHoldings: false,
+                        newestOptions: { timeoutDirectMs: 8000, timeoutProxyMs: 9000 },
+                        refreshHistoryForDayGrowth: !skipHistory,
+                        skipPositionHistory: skipHistory
+                    });
 
-                        const navDateStr0 = getDateStr(fund.navDate);
-                        const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
-                        if (needPromoteOfficialNav0) {
-                            try {
-                                const off = getOfficialDayGrowthFromHistoryWithDate(fund);
-                                if (Number.isFinite(off.chg) && off.date) {
-                                    fund._officialDayGrowth = off.chg;
-                                    fund._officialDayGrowthDate = off.date;
-                                }
-                            } catch (e) {
-                                // ignore
-                            }
+                    if (skipHistory) return !!ok;
+
+                    const navDateStr0 = getDateStr(fund.navDate);
+                    const needPromoteOfficialNav0 = navDateStr0 && navDateStr0 < todayStr0 && (status.reason === '盘后' || status.reason === '盘后补全' || !status.canRealtimeUpdate);
+                    if (!needPromoteOfficialNav0) return !!ok;
+                    try {
+                        const off = getOfficialDayGrowthFromHistoryWithDate(fund);
+                        if (Number.isFinite(off.chg) && off.date) {
+                            fund._officialDayGrowth = off.chg;
+                            fund._officialDayGrowthDate = off.date;
                         }
+                    } catch (e) {
                     }
+
+                    return !!ok;
                 };
 
-                await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, () => worker()));
+                for (let start = 0; start < list.length; ) {
+                    const batch = list.slice(start, start + batchSize);
+                    let cursor = 0;
+                    let okCount = 0;
+                    let failCount = 0;
+
+                    const worker = async () => {
+                        while (cursor < batch.length) {
+                            const fund = batch[cursor++];
+                            const ok = await processOne(fund);
+                            if (ok) okCount++;
+                            else failCount++;
+                        }
+                    };
+
+                    await Promise.all(Array.from({ length: Math.min(concurrency, batch.length) }, () => worker()));
+
+                    const total = okCount + failCount;
+                    const failRate = total > 0 ? (failCount / total) : 0;
+
+                    if (failRate >= 0.35) {
+                        concurrency = Math.max(1, Math.floor(concurrency * 0.6));
+                        batchSize = Math.max(3, Math.floor(batchSize * 0.7));
+                        batchDelayMs = Math.min(2000, Math.max(batchDelayMs, 900));
+                    } else if (failRate >= 0.15) {
+                        concurrency = Math.max(1, Math.floor(concurrency * 0.8));
+                        batchSize = Math.max(5, Math.floor(batchSize * 0.85));
+                        batchDelayMs = Math.min(1500, Math.max(batchDelayMs, 600));
+                    } else if (failRate <= 0.02 && total >= 5) {
+                        concurrency = Math.min(10, concurrency + 1);
+                        batchSize = Math.min(15, batchSize + 1);
+                        batchDelayMs = Math.max(150, Math.floor(batchDelayMs * 0.85));
+                    }
+
+                    start += batch.length;
+                    if (start < list.length && batchDelayMs > 0) {
+                        await sleep(batchDelayMs);
+                    }
+                }
 
                 saveFunds();
                 renderFundList();
