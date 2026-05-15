@@ -2755,7 +2755,7 @@
             for (const p of proxyPrefixes) {
                 try {
                     const proxyUrl = `${p}${url}`;
-                    const res = await fetch(proxyUrl, { cache: 'no-store' });
+                    const res = await fetch(proxyUrl, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
                     if (!res.ok) throw new Error(`proxy http ${res.status}`);
                     text = await res.text();
                     if (text) return text;
@@ -6430,7 +6430,7 @@
             }
             try {
                 const url = 'https://v1.hitokoto.cn/?c=i';
-                const json = await fetch(url, { cache: 'no-store' }).then(r => r.json());
+                const json = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(3000) }).then(r => r.json());
                 const text = (json && json.hitokoto) ? String(json.hitokoto) : '';
                 const from = (json && json.from) ? String(json.from) : '';
                 if (text) {
