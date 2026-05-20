@@ -2703,7 +2703,6 @@
                     reject(new Error('timeout'));
                 }, timeoutMs);
                 const cleanupScriptOnly = () => {
-                    clearTimeout(timer);
                     script.remove();
                 };
                 const cleanupAll = () => {
@@ -2845,7 +2844,6 @@
                             const timeout = setTimeout(() => { fundgzOnFail(); window.jsonpgz = prev; script.remove(); reject(new Error('timeout')); }, 8000);
                             window.jsonpgz = (data) => { fundgzOnSuccess(); clearTimeout(timeout); window.jsonpgz = prev; script.remove(); resolve(data); };
                             script.onerror = async () => {
-                                clearTimeout(timeout);
                                 script.remove();
                                 try {
                                     const url = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
